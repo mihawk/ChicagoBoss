@@ -119,6 +119,13 @@ stream(head, HttpCode, Headers) ->
 % Description: Sends a file to the browser.
 file(FilePath) ->
 	file_send(FilePath, []).
+% Decription: Send a gzip compressed file to the browser
+file(gzip, FilePath) ->
+	file_send(FilePath, [{'Content-Encoding', "gzip"}]);
+% Decription: Send a deflate compressed file to the browser
+file(deflate, FilePath) ->
+	file_send(FilePath, [{'Content-Encoding', "deflate"}]);
+
 % Description: Sends a file for download.	
 file(attachment, FilePath) ->
 	% get filename

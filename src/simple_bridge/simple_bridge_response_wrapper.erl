@@ -45,4 +45,12 @@ file(Path) ->
     Res1 = Res#response { data={file, Path} },
     ?MODULE:new(Mod, Req, Res1).
 
+file(gzip, Path) ->
+    Res1 = Res#response { data={file_gzip, Path} },
+    ?MODULE:new(Mod, Req, Res1);
+
+file(deflate, Path) ->
+    Res1 = Res#response { data={file_deflate, Path} },
+    ?MODULE:new(Mod, Req, Res1).
+
 build_response() -> Mod:build_response(Req, Res).

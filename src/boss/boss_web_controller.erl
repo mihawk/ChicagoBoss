@@ -276,8 +276,41 @@ handle_request(Req, RequestMod, ResponseMod) ->
                     Response = simple_bridge:make_response(ResponseMod, {Req, DocRoot}),
                     (Response:file(File)):build_response();
                 "/static/"++File -> 
-                    Response = simple_bridge:make_response(ResponseMod, {Req, DocRoot}),
-                    (Response:file([$/|File])):build_response();
+	            AcceptEncoding = string:tokens(Request:header(accept_encoding), ","),
+		    MSIE = case re:run(Request:header(user_agent), "(MSIE 6.0|MSIE 5.5)") of
+			nomatch -> "/";
+			_ -> "_msie/"
+		    end,
+		    FunCheck = fun(S) ->
+				PathToCheck = DocRoot ++ "_" ++ S ++ MSIE, 
+				case file:read_file_info(PathToCheck++File) of
+					{ok, _FileInfop} -> true;
+					_ -> false
+				end
+			     end,
+		    Encoding = [{X, DocRoot ++ "_" ++ X }||X<-AcceptEncoding, FunCheck(X)],
+		    case Encoding of 
+			[] -> 
+                    		Response = simple_bridge:make_response(ResponseMod, {Req, DocRoot}),
+                    		(Response:file([$/|File])):build_response();
+		        Other ->
+			  	case lists:keyfind("gzip", 1, Other) of %% gzip first
+				 	{_,_} ->
+						%error_logger:info_msg("gzip found ~p",[DocRoot++"_gzip"++MSIE++File]),
+                    				Response = simple_bridge:make_response(ResponseMod, {Req, DocRoot++"_gzip"++MSIE}),
+                    				(Response:file(gzip, [$/|File])):build_response();
+					false ->
+			  			case lists:keyfind("deflate", 1, Other) of %% deflate second
+				 			{_,_} ->
+								%error_logger:info_msg("deflate found ~p",[DocRoot++"_deflate"++MSIE++File]),
+                    						Response = simple_bridge:make_response(ResponseMod, {Req, DocRoot++"_deflate"++MSIE}),
+                    						(Response:file(deflate, [$/|File])):build_response();
+							false ->
+                    						Response = simple_bridge:make_response(ResponseMod, {Req, DocRoot}),
+                    						(Response:file([$/|File])):build_response()
+				                end			
+				end		
+		    end;
                 _ -> 
                     SessionKey = boss_session:get_session_key(),
                     SessionID = case boss_env:get_env(session_enable, true) of
