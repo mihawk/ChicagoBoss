@@ -39,6 +39,7 @@ behaviour_info(callbacks) -> [
     {path, 1},           % Just the path. (http://server.com/<PATH>?querystring)
 
     {headers, 1},        % Return a proplist of headers, key and value are strings.
+    {header, 2},        % Return a proplist of headers, key and value are strings.
     {cookies, 1},        % Return a proplist of cookies, key and value are strings.
     {query_params, 1},   % Return a proplist of query parameters, key and value are strings.
     {post_params, 1},    % Return a proplist of post parameters, key and value are strings.

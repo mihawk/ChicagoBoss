@@ -271,13 +271,34 @@ handle_request(Req, RequestMod, ResponseMod) ->
             BaseURL = boss_web:base_url(App),
             DocRoot = boss_files:static_path(App),
             Url = lists:nthtail(length(BaseURL), FullUrl),
+	    Extension = filename:extension(Url),
             case Url of
                 "/favicon.ico" = File ->
                     Response = simple_bridge:make_response(ResponseMod, {Req, DocRoot}),
                     (Response:file(File)):build_response();
                 "/static/"++File -> 
-                    Response = simple_bridge:make_response(ResponseMod, {Req, DocRoot}),
-                    (Response:file([$/|File])):build_response();
+		    case boss_env:get_env(static_compression, false) of
+			{true, ListExtension} ->
+		    		case lists:member(Extension, ListExtension) of
+					true ->
+						AcceptEncoding = string:tokens(Request:header(accept_encoding), ","),
+						case lists:member("gzip", AcceptEncoding) of
+							true -> 
+                    						Response = simple_bridge:make_response(ResponseMod, {Req, DocRoot}),
+		                    				(Response:file(gzip,[$/|File])):build_response();
+							false ->
+                    						Response = simple_bridge:make_response(ResponseMod, {Req, DocRoot}),
+		                    				(Response:file([$/|File])):build_response()
+						end;
+		 			false ->
+						%error_logger:info_msg("GET ~s", ["/static/"++File]),
+                    				Response = simple_bridge:make_response(ResponseMod, {Req, DocRoot}),
+                    				(Response:file([$/|File])):build_response()
+		    		end;
+			_Other ->
+                    		Response = simple_bridge:make_response(ResponseMod, {Req, DocRoot}),
+                    		(Response:file([$/|File])):build_response()
+		  end;
                 _ -> 
                     SessionKey = boss_session:get_session_key(),
                     SessionID = case boss_env:get_env(session_enable, true) of

@@ -57,6 +57,10 @@ header(user_agent, Req) ->
     misultin_utility:get_key_value('User-Agent', Req:get(headers));
 header(accept_ranges, Req) ->
     misultin_utility:get_key_value('Accept-Ranges', Req:get(headers));
+header(accept_language, Req) ->
+    misultin_utility:get_key_value('Accept-Language', Req:get(headers));
+header(accept_encoding, Req) ->
+    misultin_utility:get_key_value('Accept-Encoding', Req:get(headers));
 header(cookie, Req) ->
     misultin_utility:get_key_value('Cookie', Req:get(headers));
 header(keep_alive, Req) ->
@@ -81,7 +85,8 @@ headers(Req) ->
         if_match, if_none_match, if_range, if_unmodified_since, 
         range, referer, user_agent, accept_ranges, cookie, 
         keep_alive, location, content_length, content_type, 
-        content_encoding, authorization, transfer_encoding
+        content_encoding, authorization, transfer_encoding,
+	accept_language, accept_encoding
     ],
     Headers2 = lists:map(fun(H) -> {H, header(H, Req)} end, Headers1),
     [{K, V} || {K, V} <- Headers2, V /= undefined].

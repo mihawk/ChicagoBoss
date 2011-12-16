@@ -37,7 +37,18 @@ build_response({Req, DocRoot}, Res) ->
 
             %% Create the response telling Mochiweb to serve the file...
             Headers = [{"Expires", ExpireDate1}],
-            Req:serve_file(tl(Path), DocRoot, Headers)
+            Req:serve_file(tl(Path), DocRoot, Headers);
+
+	{file_gzip, Path} -> %% add compressed request for static file 
+            {{Y, _, _}, _} = calendar:local_time(),
+
+            ExpireDate = httpd_util:rfc1123_date(),
+            ExpireDate1 = re:replace(ExpireDate, " \\d\\d\\d\\d ", io_lib:format(" ~4.4.0w ", [Y + 10])),
+
+            %% Create the response telling Mochiweb to serve the file...
+            Headers = [{"Expires", ExpireDate1}],
+            Req:serve_file(gzip, tl(Path), DocRoot, Headers)
+
     end.
 
 create_cookie_header(Cookie) ->

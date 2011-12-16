@@ -18,7 +18,10 @@ build_response({Req, DocRoot}, Res) ->
             % Send the misultin response...
             Req:respond(Code, Headers, Body);
         {file, Path} ->
-            Req:file([DocRoot, Path])
+            Req:file([DocRoot, Path]);
+
+        {file_gzip, Path} ->
+            Req:file(gzip, [DocRoot, Path])
     end.
 
 create_cookie_header(Cookie) ->

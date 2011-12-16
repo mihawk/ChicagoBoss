@@ -20,7 +20,7 @@
 -export([parse_qs/0, get_qs_value/1]).
 -export([should_close/0, cleanup/0]).
 -export([parse_cookie/0, get_cookie_value/1]).
--export([serve_file/2, serve_file/3]).
+-export([serve_file/2, serve_file/3, serve_file/4]).
 -export([accepted_encodings/1]).
 
 -define(SAVE_QS, mochiweb_request_qs).
@@ -572,6 +572,22 @@ serve_file(Path, DocRoot, ExtraHeaders) ->
             end
     end.
 
+%% @spec serve_file(gzip, Path, DocRoot, ExtraHeaders) -> Response
+%% @doc Serve a gzip version of the file relative to DocRoot.
+serve_file(gzip, Path, DocRoot, ExtraHeaders) ->
+    case mochiweb_util:safe_relative_path(Path) of
+        undefined ->
+            not_found(ExtraHeaders);
+        RelPath ->
+            FullPath = filename:join([DocRoot, RelPath]),
+            case filelib:is_dir(FullPath) of
+                true ->
+                    maybe_redirect(RelPath, FullPath, ExtraHeaders);
+                false ->
+                    maybe_serve_file_gzip(FullPath, ExtraHeaders)
+            end
+    end.
+
 %% Internal API
 
 %% This has the same effect as the DirectoryIndex directive in httpd
@@ -627,6 +643,33 @@ maybe_serve_file(File, ExtraHeaders) ->
             end;
         {error, _} ->
             not_found(ExtraHeaders)
+    end.
+
+maybe_serve_file_gzip(File, ExtraHeaders) ->
+    FileGzip = File ++ ".gz",
+    case file:read_file_info(FileGzip) of
+        {ok, _FileInfo} ->
+            LastModified = httpd_util:rfc1123_date(),
+            case get_header_value("if-modified-since") of
+                LastModified ->
+                    respond({304, ExtraHeaders, ""});
+                _ ->
+                    case file:open(FileGzip, [raw, binary]) of
+                        {ok, IoDevice} ->
+                            ContentType = mochiweb_util:guess_mime(File),
+                            Res = ok({ContentType,
+                                      [{"last-modified", LastModified},
+				       {"Content-Encoding", "gzip"}
+                                       | ExtraHeaders],
+                                      {file, IoDevice}}),
+                            file:close(IoDevice),
+                            Res;
+                        _ ->
+                            not_found(ExtraHeaders)
+                    end
+            end;
+        _uncompressed -> % go for uncompressed version
+		maybe_serve_file(File, ExtraHeaders) 
     end.
 
 server_headers() ->

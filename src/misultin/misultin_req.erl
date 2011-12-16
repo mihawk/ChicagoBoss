@@ -119,6 +119,10 @@ stream(head, HttpCode, Headers) ->
 % Description: Sends a file to the browser.
 file(FilePath) ->
 	file_send(FilePath, []).
+% Decription: Send a compressed file to the browser
+file(gzip, FilePath) ->
+	file_send_gzip(FilePath, []);
+
 % Description: Sends a file for download.	
 file(attachment, FilePath) ->
 	% get filename
@@ -224,6 +228,31 @@ clean_uri(urldecode, Uri) ->
 % ignore unexisting option
 clean_uri(_Unavailable, Uri) ->
 	Uri.
+
+
+% sending the compressed version of a file if existe
+file_send_gzip(FilePath, Headers) ->
+	FilePathGzip = FilePath ++ ".gz", %% comressed version gzip better ratio than deflate; 					 				      %% supported by almost web browser
+        case file:read_file_info(FilePathGzip) of
+                {ok, FileInfoGzip} ->
+                        FileSizeGzip = FileInfoGzip#file_info.size,
+                        HeadersFullGzip = [{'Content-Type', misultin_utility:get_content_type(FilePath)}, 
+					   {'Content-Size', FileSizeGzip}, 
+					   {'Content-Encoding', "gzip"} | Headers],
+                        stream(head, HeadersFullGzip),
+                        case file_open_and_send(FilePathGzip) of
+                                {error, _Reason} ->
+                                        {raw, misultin_utility:get_http_status_code(500)};
+                                ok ->
+                                        % sending successful
+                                        ok
+                        end;
+
+		%% the gzip version of the file don't existe, go for uncompressed version
+                 _uncompressed  ->
+			error_logger:error_msg("gzip version of ~p not found~n", [FilePathGzip]),
+		        file_send(FilePath, Headers)
+        end.
 
 % sending of a file
 file_send(FilePath, Headers) ->
