@@ -19,5 +19,6 @@ test:
 
 static_gzip:
 	$(GZIP)
-static_gzip:
+
+static_deflate:
 	$(DEFLATE)
