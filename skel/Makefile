@@ -1,6 +1,7 @@
 ERL=erl
 APP={{appid}}
-CMP=./priv/gzip.sh
+GZIP=./priv/gzip.sh
+DEFLATE=./priv/deflate.sh
 
 all:
 	$(ERL) -pa {{src}}/ebin -eval 'boss_load:load_all_modules_and_emit_app_file($(APP), "ebin")' -s init stop -noshell
@@ -17,4 +18,6 @@ test:
 	$(ERL) -pa $(PWD)/ebin -pa {{src}}/ebin -run boss_web_test start $(APP) -noshell
 
 static_gzip:
-	$(CMP)
+	$(GZIP)
+static_gzip:
+	$(DEFLATE)
