@@ -26,5 +26,9 @@
 {file, "skel/priv/static/chicago-boss.png", "{{dest}}/priv/static/chicago-boss.png"}.
 {file, "skel/priv/static/favicon.ico", "{{dest}}/priv/static/favicon.ico"}.
 {file, "skel/priv/boss.routes", "{{dest}}/priv/{{appid}}.routes"}.
+{file, "skel/priv/gzip.sh", "{{dest}}/priv/gzip.sh"}.
+{file, "skel/priv/deflate.sh", "{{dest}}/priv/deflate.sh"}.
+{chmod, 8#755, "{{dest}}/priv/gzip.sh"}.
+{chmod, 8#755, "{{dest}}/priv/deflate.sh"}.
 {chmod, 8#755, "{{dest}}/start-dev.sh"}.
 {chmod, 8#755, "{{dest}}/start.sh"}.
