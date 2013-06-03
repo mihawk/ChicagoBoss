@@ -12,6 +12,7 @@
         translator_pid,
         model_modules = [],
         view_modules = [],
-        controller_modules = []
+        controller_modules = [],
+        static_fun
     }).
 

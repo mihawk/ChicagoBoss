@@ -8,6 +8,7 @@
         get_all_models/0,
         get_all_applications/0,
         base_url/1,
+        static_fun/1,
         domains/1,
         static_prefix/1,
         translator_pid/1,
@@ -37,6 +38,9 @@ get_all_applications() ->
 
 base_url(App) ->
     gen_server:call(boss_web, {base_url, App}).
+
+static_fun(App) ->
+    gen_server:call(boss_web, {app_static_fun, App}).
 
 domains(App) ->
     gen_server:call(boss_web, {domains, App}).

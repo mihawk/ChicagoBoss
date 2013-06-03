@@ -3,6 +3,8 @@
 -export([start_link/0, start_link/1, handle_request/3, process_request/5]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([handle_news_for_cache/3]).
+-export([handle_static/5]).
+-export([handle_static_gzip/5]).
 -define(DEBUGPRINT(A), error_logger:info_report("~~o)> " ++ A)).
 -define(PAGE_CACHE_PREFIX, "boss_web_controller_page").
 -define(PAGE_CACHE_DEFAULT_TTL, 60).
@@ -182,6 +184,20 @@ handle_info(timeout, State) ->
                 ModelList = boss_files:model_list(AppName),
                 ViewList = boss_files:view_module_list(AppName),
                 IsMasterNode = boss_env:is_master_node(),
+                StaticFun = case boss_env:get_env(AppName, static, undefined) of
+                             undefined ->
+                                    error_logger:info_msg("StaticFun undefined",[]),
+                                 fun ?MODULE:handle_static/5;
+                             gzip ->
+                                    error_logger:info_msg("StaticFun gzip",[]),
+                                 fun ?MODULE:handle_static_gzip/5;
+                             _ ->
+                                    error_logger:info_msg("StaticFun static",[]),
+                                 fun ?MODULE:handle_static/5
+                         end,
+
+                %% TODO init boss_static
+                                    
                 if 
                     IsMasterNode ->
                         case boss_env:get_env(server, misultin) of
@@ -216,7 +232,8 @@ handle_info(timeout, State) ->
                     domains = DomainList,
                     model_modules = ModelList,
                     view_modules = ViewList,
-                    controller_modules = ControllerList
+                    controller_modules = ControllerList,
+                    static_fun = StaticFun
                 }
         end, Applications),
 
@@ -319,6 +336,15 @@ handle_call({base_url, App}, _From, State) ->
                 Res
         end, "", State#state.applications),
     {reply, BaseURL, State};
+handle_call({app_static_fun, App}, _From, State) ->
+    error_logger:info_msg("call app_static_fun ~p~n",[App]),
+    StaticFun = lists:foldl(fun
+            (#boss_app_info{ application = App1, static_fun = Fun }, _) when App1 =:= App ->
+                Fun;
+            (_, Res) ->
+                Res
+        end, "", State#state.applications),
+    {reply, StaticFun, State};
 handle_call({static_prefix, App}, _From, State) ->
     StaticPrefix = lists:foldl(fun
             (#boss_app_info{ application = App1, static_prefix = Prefix }, _) when App1 =:= App ->
@@ -416,6 +442,7 @@ handle_request(Req, RequestMod, ResponseMod) ->
             Response1:build_response();
         App ->
             BaseURL = boss_web:base_url(App),
+            StaticFun = boss_web:static_fun(App),
             DocRoot = boss_files:static_path(App),
             StaticPrefix = boss_web:static_prefix(App),
             Url = lists:nthtail(length(BaseURL), FullUrl),
@@ -428,20 +455,94 @@ handle_request(Req, RequestMod, ResponseMod) ->
                 _ ->
                     case string:substr(Url, 1, length(StaticPrefix)) of
                         StaticPrefix ->
-                            [$/|File] = lists:nthtail(length(StaticPrefix), Url),
-			    Response2 = case boss_env:boss_env() of
-					    development ->
-						Response:header("Cache-Control", "no-cache");
-					    _ ->
-						Response
-					end,
-			    Response3 = Response2:file([$/|File]),
-                            Response3:build_response();
+                             StaticFun(Request, App, Response, StaticPrefix, Url);
                         _ ->
                             build_dynamic_response(App, Request, Response, Url)
                     end
             end
     end.
+
+handle_static(_Req, _App, Response, StaticPrefix, Url) ->
+    error_logger:info_msg("handle_static: ~p, ~p~n", [StaticPrefix, Url]),
+    [$/|File] = lists:nthtail(length(StaticPrefix), Url),
+    Response2 = case boss_env:boss_env() of
+                    development ->
+                        Response:header("Cache-Control", "no-cache");
+                    _ ->
+                        Response
+                end,
+    Response3 = Response2:file([$/|File]),
+    R=Response3:build_response(),
+    error_logger:info_msg("~p~n",[R]),
+    R.
+    
+handle_static_gzip_on_disc(_Req, _App, Response, StaticPrefix, Url) ->
+    error_logger:info_msg("handle_static_gzip_on_disc: ~p, ~p~n", [StaticPrefix, Url]),
+    [$/|File] = lists:nthtail(length(StaticPrefix), Url),
+    Response2 = case boss_env:boss_env() of
+                    development ->
+                        Response:header("Cache-Control", "no-cache");
+                    _ ->
+                        Response
+                end,
+    Response3 = Response2:file([$/|File]),
+    Response3:build_response().
+
+handle_static_gzip_on_cache(_Req, _App, Response, StaticPrefix, Url) ->
+    error_logger:info_msg("handle_static_gzip_on_ram: ~p, ~p~n", [StaticPrefix, Url]),
+    [$/|File] = lists:nthtail(length(StaticPrefix), Url),
+    Response2 = case boss_env:boss_env() of
+                    development ->
+                        Response:header("Cache-Control", "no-cache");
+                    _ ->
+                        Response
+                end,
+    Response3 = Response2:file([$/|File]),
+    Response3:build_response().
+
+handle_static_gzip(Request, App, Response, StaticPrefix, Url) ->
+    IsBuggedMsIe = fun(X) -> 
+                     case re:run(X, "(MSIE 6.0|MSIE 5.5)") of
+                         nomatch -> false;
+                         _ -> true
+                     end
+             end,    
+    AcceptEncoding = string:tokens(Request:header(accept_encoding), ","),
+    UserAgent=Request:header(user_agent),
+    error_logger:info_msg("AcceptEncoding ~p~n"
+                          "UserAgent ~p~n", [
+                                             AcceptEncoding, 
+                                             UserAgent
+                                            ]),
+    AcceptGzip = [X||X<-AcceptEncoding, X == "gzip"],
+    error_logger:info_msg("AcceptGzip ~p~n",
+                          [
+                           AcceptGzip
+                          ]),
+    case AcceptGzip of
+        ["gzip"] ->
+            error_logger:info_msg("Is MMSIE ~p~n",
+                                  [
+                                   IsBuggedMsIe(UserAgent)
+                                  ]),                                
+            case IsBuggedMsIe(UserAgent) of 
+                true ->
+                    handle_static(Request, App, Response, StaticPrefix, Url);
+                false ->
+                    case boss_static:gzip(App, Url) of
+                        {_, on_disc} ->                            
+                            handle_static_gzip_on_disc(Request, App, Response, StaticPrefix, Url);
+                        {true, on_cache, Data} ->
+                            handle_static_gzip_on_cache(Request, App, Response, StaticPrefix, Data);
+                        _ ->
+                            handle_static(Request, App, Response, StaticPrefix, Url)
+                    end
+            end;
+        _ ->
+            handle_static(Request, App, Response, StaticPrefix, Url)
+    end.
+
+
 
 build_dynamic_response(App, Request, Response, Url) ->
     SessionKey = boss_session:get_session_key(),
