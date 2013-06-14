@@ -105,7 +105,6 @@ do_gzip_on_disc(EtsTabId, App,  StaticPrefix, Limit)
                            Ratio when Ratio > Limit ->
                                filelib:ensure_dir(FileGzip),
                                file:write_file(FileGzip, Bin),
-                               error_logger:info_msg("~p ~p~n",[Ratio, FileGzip]),
                                SA = #static_asset{
                                        path=list_to_binary(Path),
                                        size=Len0,
