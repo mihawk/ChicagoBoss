@@ -55,6 +55,7 @@ init([]) ->
     Web = {boss_web_controller,
 	   {boss_web_controller, start_link, [WebConfig]},
 	   permanent, 5000, worker, dynamic},
-
-    Processes = [Web],
+    StaticSup = {boss_static_sup, {boss_static_sup, start_link, []},
+                 permanent, 5000, supervisor, [boss_static_sup]},
+    Processes = [StaticSup, Web],
     {ok, {{one_for_one, 10, 10}, Processes}}.

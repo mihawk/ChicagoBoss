@@ -2,46 +2,41 @@
 
 -behaviour(gen_server).
 
--export([start_link/0, start_link/1]).
+-export([start_link/0]).
+-export([start_link/1]).
+%% gen_server API
+-export([init/1]).
+-export([handle_call/3]).
+-export([handle_cast/2]).
+-export([handle_info/2]).
+-export([terminate/2]).
+-export([code_change/3]).
 
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
-
+%% boss_static API
 -export([find_file/2]).
 -export([do_gzip_on_disc/3]).
 
--record(state, {
-        static_tables
-    }).
+-record(state, {static_tables}).
 
 -record(static_asset, {
-        path,
-        size,
-        count,
-        gzip,
-        gzip_size,
-        backend
+          path,
+          size,
+          count,
+          gzip,
+          gzip_size,
+          backend
     }).
-
 
 -define(is_folder(X),filelib:is_dir(X)).
 -define(is_file(X),filelib:is_file(X)).
 
-
 start_link() ->
     start_link([]).
 
-
-
-%% start_link(Config) ->
-%%     gen_server:start_link({local, boss_static}, ?MODULE, Config, []).
-
 start_link(Args) ->
-    gen_server:start_link(?MODULE, Args, []).
+    gen_server:start_link({local, boss_static}, ?MODULE, Args, []).
 
-init(Options) ->
-    Apps = proplists:get_value(applications, Options),
-    %priv/var/static/ets
-    
+init(_Options) ->
     {ok, #state{static_tables=[]}}.
 
 handle_call({set_on_cache, _App, _Url}, _From, State) ->
@@ -59,19 +54,14 @@ handle_cast({gzip_static_asset, App, StaticPrefix}, #state{static_tables=Tables}
     case proplists:get_value(App, Tables) of
         {ok, EtsTab} ->
             do_gzip_on_disc(EtsTab, App, StaticPrefix),
-            {reply, ok, State};
+            {noreply, State};
         
         undefined ->
-            NewTab = ets:new(Name, []),
-            NewTables = [{App, NewTab}|Tables],
-            do_gzip_on_disc(NewTab, App, StaticPrefix),            
-            {reply, ok, State#state{static_tables=NewTables}}
+            StaticTableId = ets:new(Name, [ordered_set, public, {keypos, 1}]),
+            NewTables = [{App, StaticTableId}|Tables],
+            do_gzip_on_disc(StaticTableId, App, StaticPrefix),            
+            {noreply, State#state{static_tables=NewTables}}
     end;
-
-handle_cast({gzip_static_asset, App, _StaticPrefix, _Url, on_disk}, #state{static_tables=Tables}=State) when is_atom(App) ->
-    Name = list_to_atom(atom_to_list(App)++"_static_asset"),
-    NewTables = [{App, ets:new(Name)}|Tables],
-    {reply, ok, State#state{static_tables=NewTables}};
 
 handle_cast({incr_count, _App, _Url}, State) ->
     {noreply, State};
@@ -89,7 +79,10 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 %% internal 
-do_gzip_on_disc(_EtsTab, App,  StaticPrefix)
+do_gzip_on_disc(EtsTab, App,  StaticPrefix)  ->
+    do_gzip_on_disc(EtsTab, App,  StaticPrefix, 2). %default 2%
+
+do_gzip_on_disc(EtsTabId, App,  StaticPrefix, Limit) 
     when is_atom(App) ->
     BaseDir = boss_files:root_priv_dir(App),
     StaticDir = filename:join(BaseDir, StaticPrefix),    
@@ -97,21 +90,39 @@ do_gzip_on_disc(_EtsTab, App,  StaticPrefix)
     filelib:ensure_dir(StaticGzipDir),
     Size=length(StaticDir)+1, 
     DoGzipIt = fun(File) ->
-                       FileGzip=filename:join(StaticGzipDir,lists:nthtail(Size, File)), 
-                       %%fit into memory :)
+                       Path = lists:nthtail(Size, File),
+                       FileGzip=filename:join(StaticGzipDir, Path), 
                        {ok, Data} = file:read_file(File),
                        Len0 = byte_size(Data),
                        Bin = zlib:gzip(Data),
                        Len1 = byte_size(Bin),
-                       Ratio = (Len0-Len1)/Len0*100,
+                       Ratio = case Len0 of 
+                                   Len0 when Len0 /= 0 -> 
+                                       (Len0-Len1)/Len0*100;
+                                   _ -> undefined
+                               end,
                        case Ratio of
-                           %maybe configurable Ratio sup to 2% 
-                           Ratio when Ratio > 2 ->
+                           Ratio when Ratio > Limit ->
                                filelib:ensure_dir(FileGzip),
-                               file:write_file(FileGzip, Bin);                   
-                           _ ->
-                               %don't store it
-                               ok
+                               file:write_file(FileGzip, Bin),
+                               error_logger:info_msg("~p ~p~n",[Ratio, FileGzip]),
+                               SA = #static_asset{
+                                       path=list_to_binary(Path),
+                                       size=Len0,
+                                       count=0,
+                                       gzip=true,
+                                       gzip_size=Len1,
+                                       backend=on_disc},
+                               ets:insert(EtsTabId, SA);
+                           _ ->                               
+                               SA = #static_asset{
+                                       path=list_to_binary(Path),
+                                       size=Len0,
+                                       count=0,
+                                       gzip=false,
+                                       gzip_size=0,
+                                       backend=on_disc},
+                               ets:insert(EtsTabId, SA)
                        end
                end,
     find_file(StaticDir, DoGzipIt).
@@ -145,8 +156,6 @@ find_file(Path, FunFile) when is_function(FunFile)->
             end
     end.
 
-do_load_gzip_on_cache(App, File) ->
-    ok.
 
                         
 
