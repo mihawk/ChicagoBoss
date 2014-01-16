@@ -33,13 +33,6 @@
                   request     = undefined
                  }).  
 
--record(wamp_url, {
-              protocol = http,
-              host     = undefined,
-              port     = 80,
-              path     = undefined,
-              prefix   = undefined,
-              postfix  = undefined,
-              uri      = undefined
-             }). 
-              
+-define(json_encode(X), jsx:encode(X)).              
+-define(json_decode(X), jsx:decode(X)).              
+

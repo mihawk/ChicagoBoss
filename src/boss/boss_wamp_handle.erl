@@ -15,21 +15,29 @@
 
 -include("boss_wamp.hrl").
 
--define(json_encode(X), jsx:encode(X)).
-
-process_frame([?WAMP_PREFIX, _Prefix, _Uri], _FrameCtx, State) ->
+process_frame([?WAMP_PREFIX, Prefix, Url], FrameCtx, State) ->
+    CleanUrl = clean_url(Url),
+    Path = proplists:get_value(path, CleanUrl),
+    Module = case dict:find(Path, State#state.directory) of 
+                 {ok, Name } -> Name;
+                 _ -> undefined
+             end,
+    boss_wamp:insert_prefix(Prefix, Module, FrameCtx#frame_ctx.websocket_id),    
     {ok, State};
+
 process_frame([?WAMP_CALL, CallId, Uri | Args], FrameCtx, State) ->
     Dir = State#state.directory,
     {Mod, Fun} = get_MF_from_uri(Uri, Dir),
     Reply = call(Mod, Fun, Args, FrameCtx),    
     Addresse = FrameCtx#frame_ctx.websocket_id,
     ReplyJson = case Reply of 
-                     {ok, Result} ->
-                         ?json_encode([?WAMP_CALLRESULT, CallId, Result]);
-                     {error, Reason} ->
-                         ?json_encode([?WAMP_CALLERROR, CallId, Reason])                
-                 end,    
+                    {ok, Result} ->
+                        ?json_encode([?WAMP_CALLRESULT, CallId, Result]);
+                    {error, Reason} ->
+                        ?json_encode([?WAMP_CALLERROR, CallId, Reason]);                
+                    {error, Reason, Detail} ->
+                        ?json_encode([?WAMP_CALLERROR, CallId, Reason, Detail])
+                end,    
     Addresse ! {text, ReplyJson},
     {ok, State};
 
@@ -46,14 +54,18 @@ process_frame([?WAMP_SUBSCRIBE, TopicUri], FrameCtx, State) ->
     end,
     {ok, State};
 
-process_frame([?WAMP_UNSUBSCRIBE, _Topic], _FrameCtx, State) ->
+process_frame([?WAMP_UNSUBSCRIBE, Topic], #frame_ctx{session_id=SessionId}=_FrameCtx, State) ->    
+    Agent = boss_wamp:lookup_agent(SessionId, binary_to_list(Topic)),
+    lager:info("lookup agent ~p ~p ~p~n", [Agent, SessionId, Topic]),
+    Agent ! shutdown,
+    boss_wamp:delete_agent(SessionId, Topic),
     {ok, State};
 
-process_frame([?WAMP_PUBLISH, _Topic, _Evt], _FrameCtx, State) ->
-    {ok, State};
-process_frame([?WAMP_PUBLISH, _Topic, _Evt, _ExcludeMe], _FrameCtx, State) ->
-    {ok, State};
-process_frame([?WAMP_PUBLISH, _Topic, _Evt, _Exclude, _Eligible], _FrameCtx, State) ->
+process_frame([?WAMP_PUBLISH, TopicUri, Event | Args], FrameCtx, State) ->
+    Dir = State#state.directory,
+    {Mod, _Fun} = get_MF_from_uri(TopicUri, Dir),
+    Res =  call(Mod, publish, [TopicUri, Event] ++ Args , FrameCtx),        
+    wamp_publish(Res, FrameCtx),
     {ok, State}.
 
 call(_Mod, undefined, _Args, _FrameCtx) ->   {error, <<"undefined function">>};
@@ -158,11 +170,12 @@ start_agent(Module, Topic, Since, ReqCtx) when is_binary(Topic) ->
 
 start_agent(Module, Topic, Since, FrameCtx) ->
     Agent = spawn_link(?MODULE, websocket_agent, [Module, Topic, Since, FrameCtx]),
-    lager:info("start ws agent ~p on topic ~p~n", [Agent, Topic]),    
+    lager:info("start ws agent ~p on topic ~p~n", [Agent, Topic]),
+    boss_wamp:insert_agent(Agent, FrameCtx#frame_ctx.session_id, Topic),    
     receive 
         {'EXIT', _Pid, normal} -> %
             ok;
-        {'EXIT', _Pid, shutdown} -> % manual termination, not a c
+        {'EXIT', _Pid, shutdown} -> % manual termination, not a crash
             ok;
         {'EXIT', _Pid, Reason} ->
             lager:notice("restart ws agent on topic ~p for reason ~p",
@@ -198,8 +211,41 @@ websocket_agent(Module, Topic, Since, #frame_ctx{websocket_id=Addressee}=FrameCt
 
         shutdown ->
             lager:info(">>> agent ~p terminate (shutdown)", [Me]),
-            exit(shutdown);            
+            exit(shutdown); %% ?not sure             
 
         _ ->
             websocket_agent(Module, Topic, Since, FrameCtx)            
     end.
+
+
+wamp_publish({ok, Args}, FrameCtx) ->  wamp_publish1(Args, FrameCtx);
+wamp_publish(Err, _) ->  lager:info("wamp publish error ~p", [Err]).
+
+wamp_publish1(Args, FrameCtx) when is_list(Args)->
+    Topic = proplists:get_value(topic, Args),
+    Event = proplists:get_value(event, Args),
+    ExcludeMe = proplists:get_value(exclude_me, Args),
+    Exclude = proplists:get_value(exclude, Args),
+    Eligible = proplists:get_value(eligible, Args),
+    case ExcludeMe of 
+        undefined ->
+            wamp_publish1(Topic, Event, Exclude, Eligible, FrameCtx);
+        true ->
+            wamp_publish1(Topic, Event, Exclude, Eligible, FrameCtx);            
+        _ ->
+            wamp_publish1(Topic, Event, ExcludeMe, Eligible, FrameCtx)
+    end.
+            
+wamp_publish1(Topic, Event, Exc, Eli, FrameCtx) when is_binary(Topic)->
+    wamp_publish1(binary_to_list(Topic), Event, Exc, Eli, FrameCtx);
+wamp_publish1(Topic, Event, _, _, _FrameCtx) ->
+    lager:info("boss_mq:push(~p, ~p)", [Topic, Event]),
+    boss_mq:push(Topic, Event).
+
+%%% TODO
+%%% exludeMe, Eligible ? extend boss_mq? tinymq?
+%%% boss_mq:push(Topic, Event, ExcludeMe).
+%%% boss_mq:push(Topic, Event, Exclude, Eligible).
+
+
+

@@ -29,6 +29,9 @@
 
 -export([init_wamp_directory/0]).
 
+-export([insert_prefix/3, lookup_prefix/1, lookup_prefix/2, delete_prefix/1]).
+-export([insert_agent/3, lookup_agent/2, delete_agent/2]).
+
 -include("boss_wamp.hrl").
 
 -define(SERVER, ?MODULE).
@@ -62,6 +65,23 @@ close(Reason, ServiceUrl, WebSocketId, Req, SessionId) ->
     gen_server:cast({global, ?MODULE}, {terminate, Reason, ServiceUrl, WebSocketId, Req, SessionId}).
 incoming(ServiceUrl, WebSocketId, Req, SessionId, Message) ->
     gen_server:cast({global, ?MODULE}, {message, ServiceUrl, WebSocketId, Req, SessionId, Message}).
+
+
+insert_prefix(Prefix, Module, WebSocketId) ->
+    ets:insert_new(?TAB, {{wamp_prefix, Prefix}, Module, WebSocketId}). 
+lookup_prefix(Prefix) ->
+    ets:lookup(?TAB, {wamp_prefix, Prefix}).
+lookup_prefix(Prefix, Pos) ->
+    ets:lookup_element(?TAB, {wamp_prefix, Prefix}, Pos).
+delete_prefix(Prefix) ->
+    ets:delete(?TAB, {wamp_prefix, Prefix}).
+
+insert_agent(Agent, SessionId, Topic) when is_pid(Agent)->
+    ets:insert_new(?TAB, {{wamp_agent, SessionId, Topic}, Agent}). 
+lookup_agent(SessionId, Topic) ->
+    ets:lookup_element(?TAB, {wamp_agent, SessionId, Topic}, 2).
+delete_agent(SessionId, Topic) ->
+    ets:delete(?TAB, {wamp_agent, SessionId, Topic}).
 
     
 %%%===================================================================
@@ -144,7 +164,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 handle_message(ServiceUrl, WebsocketId, Req, SessionId, JsonMsg, State) ->
-    Message = jsx:decode(JsonMsg),
+    Message = ?json_decode(JsonMsg),
     FrameCtx = #frame_ctx{service_url = ServiceUrl, 
                       request = Req,
                       session_id = SessionId,
