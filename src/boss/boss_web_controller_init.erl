@@ -105,7 +105,8 @@ init_webserver(ThisNode, MasterNode, ServerMod, SSLEnable, SSLOptions,
             end,
             if
         MasterNode =:= ThisNode ->
-            boss_service_sup:start_services(ServicesSupPid, boss_websocket_router);
+            boss_service_sup:start_services(ServicesSupPid, boss_websocket_router),
+            boss_service_sup:start_services(ServicesSupPid, boss_wamp);
 	true ->
 	    ok
             end
