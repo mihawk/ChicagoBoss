@@ -125,7 +125,8 @@ handle_info(_Info, State) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, _State) ->
-    error_logger:info_msg("** terminate ~p~n",[_Reason]).
+    error_logger:info_msg("** terminate ~p~n",[_Reason]),
+    ok.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -143,6 +144,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 handle_message(_ServiceUrl, _WebSocketId, _Req, _SessionId, _Message, State) ->
+    %%todo
     {ok, State}.
 
 init_wamp_directory() ->    
