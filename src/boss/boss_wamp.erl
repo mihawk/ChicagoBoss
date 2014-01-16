@@ -111,8 +111,8 @@ handle_cast({join, _ServiceUrl, _WebSocketId, _Req, _SessionId}, State) ->
 handle_cast({terminate, _Reason, _ServiceUrl, _WebSocketId, _Req, _SessionId}, State) ->
     {noreply, State};
 
-handle_cast({message, ServiceUrl, WebSocketId, Req, SessionId, Message}, State) ->
-    handle_message(ServiceUrl, WebSocketId, Req, SessionId, Message, State),
+handle_cast({frame, ServiceUrl, WebSocketId, Req, SessionId, Frame}, State) ->
+    handle_frame(ServiceUrl, WebSocketId, Req, SessionId, Frame, State),
     {noreply, State};
 
 handle_cast(_Msg, State) ->    
@@ -163,8 +163,8 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-handle_message(ServiceUrl, WebsocketId, Req, SessionId, JsonMsg, State) ->
-    Message = ?json_decode(JsonMsg),
+handle_frame(ServiceUrl, WebsocketId, Req, SessionId, JsonFrame, State) ->
+    Message = ?json_decode(JsonFrame),
     FrameCtx = #frame_ctx{service_url = ServiceUrl, 
                       request = Req,
                       session_id = SessionId,
