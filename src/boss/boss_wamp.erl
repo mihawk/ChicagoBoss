@@ -145,13 +145,14 @@ code_change(_OldVsn, State, _Extra) ->
 
 handle_message(ServiceUrl, WebsocketId, Req, SessionId, JsonMsg, State) ->
     Message = jsx:decode(JsonMsg),
-    ReqCtx = #req_ctx{service_url = ServiceUrl, 
+    FrameCtx = #frame_ctx{service_url = ServiceUrl, 
                       request = Req,
                       session_id = SessionId,
                       websocket_id = WebsocketId},
+    %%spawn a process for each frame
     process_flag(trap_exit, true),    
     _Pid = spawn_link(fun() ->
-                             boss_wamp_handle:process_frame(Message, ReqCtx, State)
+                             boss_wamp_handle:process_frame(Message, FrameCtx, State)
                       end),    
     {ok, State}.
 
