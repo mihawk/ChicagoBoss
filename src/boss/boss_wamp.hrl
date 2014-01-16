@@ -18,3 +18,10 @@
           internal = undefined,
           directory = undefined
          }).
+
+-record(req_ctx, {
+                  service_url = undefined,
+                  session_id  = undefined,
+                  websocket_id= undefined,
+                  request     = undefined
+                 }).                  

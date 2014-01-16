@@ -143,8 +143,16 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-handle_message(_ServiceUrl, _WebSocketId, _Req, _SessionId, _Message, State) ->
-    %%todo
+handle_message(ServiceUrl, WebsocketId, Req, SessionId, JsonMsg, State) ->
+    Message = jsx:decode(JsonMsg),
+    ReqCtx = #req_ctx{service_url = ServiceUrl, 
+                      request = Req,
+                      session_id = SessionId,
+                      websocket_id = WebsocketId},
+    process_flag(trap_exit, true),    
+    _Pid = spawn_link(fun() ->
+                             boss_wamp_handle:process_frame(Message, ReqCtx, State)
+                      end),    
     {ok, State}.
 
 init_wamp_directory() ->    
