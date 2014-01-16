@@ -51,6 +51,7 @@ load_all_modules(Application, TranslatorSupPid, OutDir) ->
 	   {lib_modules,		fun load_libraries/2			},
 	   {websocket_modules,		fun load_services_websockets/2		},
 	   {mail_modules,		fun load_mail_controllers/2		},
+       {wamp_modules,	       fun load_wamp_modules/2		        },
 	   {controller_modules,		fun load_web_controllers/2		},
 	   {model_modules,		fun load_models/2			},
 	   {view_lib_helper_modules,	fun load_view_lib_modules/2		},
@@ -108,6 +109,11 @@ load_libraries(Application) ->
 load_libraries(Application, OutDir) ->
     
     load_dirs(boss_files_util:lib_path(), Application, OutDir, fun compile/2).
+
+load_wamp_modules(Application) ->
+    load_wamp_modules(Application, boss_files_util:ebin_dir()).
+load_wamp_modules(Application, OutDir) ->
+    load_dirs(boss_files_util:wamp_path(), Application, OutDir, fun compile/2).
 
 load_services_websockets(Application) ->
     load_services_websockets(Application, boss_files_util:ebin_dir()).

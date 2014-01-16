@@ -57,6 +57,8 @@
 
 -export([websocket_path/0]).
 
+-export([wamp_path/0]).
+
 -export([compiler_adapters/0]).
 
 -export([template_adapters/0]).
@@ -196,6 +198,9 @@ test_path() -> [filename:join([root_src_dir(), "test", "functional"])].
 
 websocket_path() -> [filename:join([root_src_dir(), "websocket"])].
 -spec compiler_adapters() -> [types:compiler_adapters()].
+
+-spec wamp_path() -> [input_string(), ...].
+wamp_path() -> [filename:join([root_src_dir(), "wamp"])].
 
 compiler_adapters() -> 
     [boss_compiler_adapter_erlang, boss_compiler_adapter_elixir, boss_compiler_adapter_lfe].
