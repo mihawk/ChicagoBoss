@@ -1,3 +1,10 @@
+%%%-------------------------------------------------------------------
+%%% @author mihawk <mihawk@abc>
+%%% @copyright (C) 2014, mihawk
+%%% @doc
+%%% @end
+%%% Created : 16 Jan 2014 by mihawk <mihawk@abc>
+%%%-------------------------------------------------------------------
 
 -define(WAMP_PROTOCOL_VERSION, 1).
 -define(__VERSION__, "0.1.0").
@@ -24,4 +31,15 @@
                   session_id  = undefined,
                   websocket_id= undefined,
                   request     = undefined
-                 }).                  
+                 }).  
+
+-record(wamp_url, {
+              protocol = http,
+              host     = undefined,
+              port     = 80,
+              path     = undefined,
+              prefix   = undefined,
+              postfix  = undefined,
+              uri      = undefined
+             }). 
+              
