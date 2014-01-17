@@ -21,18 +21,18 @@
 -define(TAB, boss_wamp).
 
 -record(state, {
-          handler = undefined, 
-          internal = undefined,
-          directory = undefined
+          handler = undefined   ::atom(), 
+          internal = undefined  ,
+          directory = undefined :: dict()
          }).
 
 -record(frame_ctx, {
-                  service_url = undefined,
-                  session_id  = undefined,
-                  websocket_id= undefined,
+                  service_url = undefined ::string(),
+                  session_id  = undefined ::string(),
+                  websocket_id= undefined ::pid(),
                   request     = undefined
                  }).  
 
--define(json_encode(X), jsx:encode(X)).              
--define(json_decode(X), jsx:decode(X)).              
+-define(json_encode(X), jsx:encode(X)).
+-define(json_decode(X), jsx:decode(X)).
 

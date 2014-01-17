@@ -28,6 +28,7 @@ process_frame([?WAMP_PREFIX, Prefix, Url], FrameCtx, State) ->
 process_frame([?WAMP_CALL, CallId, Uri | Args], FrameCtx, State) ->
     Dir = State#state.directory,
     {Mod, Fun} = get_MF_from_uri(Uri, Dir),
+    lager:debug("Wamp CALL {~p, ~p, ~p}",[Mod, Fun, Args]),
     Reply = call(Mod, Fun, Args, FrameCtx),    
     Addresse = FrameCtx#frame_ctx.websocket_id,
     ReplyJson = case Reply of 
@@ -44,19 +45,26 @@ process_frame([?WAMP_CALL, CallId, Uri | Args], FrameCtx, State) ->
 process_frame([?WAMP_SUBSCRIBE, TopicUri], FrameCtx, State) ->
     Dir = State#state.directory,
     {Mod, _Fun} = get_MF_from_uri(TopicUri, Dir),
-    case call(Mod, subscribe, TopicUri, FrameCtx) of
+    lager:debug("Wamp SUBSCRIBE call {~p, ~p, ~p}",[Mod, subscribe, TopicUri]),
+    case call(Mod, subscribe, [TopicUri], FrameCtx) of
         {ok, {Topic, Since}} ->
-            % ?? process_flag(trap_exit, true),
+            lager:debug("Wamp SUBSCRIBE return {topic:~p, since:~p}",[Topic, Since]),
+            %% process_flag(trap_exit, true), %%??
             spawn(?MODULE, start_agent, [Mod, Topic, Since, FrameCtx]);
         Err ->
-            lager:info("process frame subscribe error ~p", [Err]),            
+            lager:debug("process frame subscribe error ~p", [Err]),            
             Err
     end,
     {ok, State};
 
-process_frame([?WAMP_UNSUBSCRIBE, Topic], #frame_ctx{session_id=SessionId}=_FrameCtx, State) ->    
-    Agent = boss_wamp:lookup_agent(SessionId, binary_to_list(Topic)),
-    lager:info("lookup agent ~p ~p ~p~n", [Agent, SessionId, Topic]),
+process_frame([?WAMP_UNSUBSCRIBE, TopicUri], #frame_ctx{session_id=SessionId}=FrameCtx, State) ->    
+    Dir = State#state.directory,
+    {Mod, _Fun} = get_MF_from_uri(TopicUri, Dir),    
+    {ok, Topic} = call(Mod, unsubscribe, [TopicUri], FrameCtx),    
+    Agent = boss_wamp:lookup_agent(SessionId, Topic),
+    lager:debug("Wamp UNSUBSCRIBE agent ~p "
+                "for sessionId ~p on topic ~p~n", 
+                [Agent, SessionId, Topic]),
     Agent ! shutdown,
     boss_wamp:delete_agent(SessionId, Topic),
     {ok, State};
@@ -82,7 +90,7 @@ call(Module, Function, Args, FrameCtx) when is_atom(Module),
 apply_function(Module, Function, Args, FrameCtx) when is_atom(Module) ->
     maybe_pmod(Module, Function, Args, FrameCtx).
 
-maybe_pmod(Mod, Fun, Args, FrameCtx) ->
+maybe_pmod(Mod, Fun, Args, #frame_ctx{request=Req, session_id=SessionID}=FrameCtx) ->
     case proplists:get_value(new, Mod:module_info(exports), undefined) of
         undefined ->
             erlang:apply(Mod, Fun, Args);
@@ -170,7 +178,7 @@ start_agent(Module, Topic, Since, ReqCtx) when is_binary(Topic) ->
 
 start_agent(Module, Topic, Since, FrameCtx) ->
     Agent = spawn_link(?MODULE, websocket_agent, [Module, Topic, Since, FrameCtx]),
-    lager:info("start ws agent ~p on topic ~p~n", [Agent, Topic]),
+    lager:debug("start ws agent ~p on topic ~p~n", [Agent, Topic]),
     boss_wamp:insert_agent(Agent, FrameCtx#frame_ctx.session_id, Topic),    
     receive 
         {'EXIT', _Pid, normal} -> %
@@ -178,7 +186,7 @@ start_agent(Module, Topic, Since, FrameCtx) ->
         {'EXIT', _Pid, shutdown} -> % manual termination, not a crash
             ok;
         {'EXIT', _Pid, Reason} ->
-            lager:notice("restart ws agent on topic ~p for reason ~p",
+            lager:debug("restart ws agent on topic ~p for reason ~p",
                          [Topic, Reason]),                
             start_agent(Module, Topic, Since, FrameCtx)
     end.
@@ -190,27 +198,29 @@ websocket_agent(Module, Topic, Since, #frame_ctx{websocket_id=Addressee}=FrameCt
     receive
         {_From, Timestamp, Messages} ->
             case call(Module, event, [Topic, Messages], FrameCtx) of
-                {ok, {Topic, Event}} -> 
-                    Msg = [?WAMP_EVENT, Topic, Event],
+                {ok, {Topic1, Event}} -> 
+                    Msg = [?WAMP_EVENT, Topic1, Event],
                     Json = ?json_encode(Msg),
+                    lager:debug("Wamp EVENT ~p", [Msg]),
                     Addressee ! {text, Json};
                 Err ->
+                    lager:debug("Wamp EVENT error ~p", [Err]),
                     Err
             end,        
             websocket_agent(Module, Topic, Timestamp, FrameCtx);
         
         {'DOWN', _Ref, process, Addressee, Reason} ->
-            lager:info(">>> agent ~p terminate cuz consumer ~p die for reason ~p",
-                       [Me, Addressee, Reason]),
+            lager:debug(">>> ws agent ~p on topic ~p terminate cuz consumer ~p terminate for reason ~p",
+                       [Me, Topic, Addressee, Reason]),
             stop;
 
         info ->
-            lager:info(">>> agent ~p subscribe to topic ~p forward to ~p",
+            lager:debug(">>> agent ~p subscribe to topic ~p forward to ~p",
                        [Me, Topic, Addressee]),
             websocket_agent(Module, Topic, Since, FrameCtx);            
 
         shutdown ->
-            lager:info(">>> agent ~p terminate (shutdown)", [Me]),
+            lager:debug(">>> agent ~p terminate (shutdown)", [Me]),
             exit(shutdown); %% ?not sure             
 
         _ ->
@@ -219,7 +229,7 @@ websocket_agent(Module, Topic, Since, #frame_ctx{websocket_id=Addressee}=FrameCt
 
 
 wamp_publish({ok, Args}, FrameCtx) ->  wamp_publish1(Args, FrameCtx);
-wamp_publish(Err, _) ->  lager:info("wamp publish error ~p", [Err]).
+wamp_publish(Err, _) ->  lager:debug("wamp publish error ~p", [Err]).
 
 wamp_publish1(Args, FrameCtx) when is_list(Args)->
     Topic = proplists:get_value(topic, Args),
@@ -239,7 +249,7 @@ wamp_publish1(Args, FrameCtx) when is_list(Args)->
 wamp_publish1(Topic, Event, Exc, Eli, FrameCtx) when is_binary(Topic)->
     wamp_publish1(binary_to_list(Topic), Event, Exc, Eli, FrameCtx);
 wamp_publish1(Topic, Event, _, _, _FrameCtx) ->
-    lager:info("boss_mq:push(~p, ~p)", [Topic, Event]),
+    lager:debug("boss_mq:push(~p, ~p)", [Topic, Event]),
     boss_mq:push(Topic, Event).
 
 %%% TODO
