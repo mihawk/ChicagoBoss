@@ -64,7 +64,7 @@ join(ServiceUrl, WebSocketId, Req, SessionId) ->
 close(Reason, ServiceUrl, WebSocketId, Req, SessionId) ->
     gen_server:cast({global, ?MODULE}, {terminate, Reason, ServiceUrl, WebSocketId, Req, SessionId}).
 incoming(ServiceUrl, WebSocketId, Req, SessionId, Message) ->
-    gen_server:cast({global, ?MODULE}, {message, ServiceUrl, WebSocketId, Req, SessionId, Message}).
+    gen_server:cast({global, ?MODULE}, {frame, ServiceUrl, WebSocketId, Req, SessionId, Message}).
 
 
 insert_prefix(Prefix, Module, WebSocketId) ->
@@ -94,11 +94,13 @@ init(_) ->
     {ok, #state{directory=init_wamp_directory()}}.
     
 handle_call({welcome, _ServiceUrl, WebSocketId, Req, SessionId}, _From, State) ->    
-    ServerInfo = "ChicagoBoss Wamp Server/" ++ ?__VERSION__,
+    ServerInfo = "ChicagoBoss WAMP Server/" ++ ?__VERSION__,
     WelcomeMsg = [?WAMP_WELCOME, SessionId, ?WAMP_PROTOCOL_VERSION,
                   list_to_binary(ServerInfo)],    
     Req1 = cowboy_req:set_resp_header(<<"Sec-Websocket-Protocol">>, <<"wamp">>, Req),
-    WebSocketId ! {text, jsx:encode(WelcomeMsg)},
+    BinMsg = ?json_encode(WelcomeMsg),
+    lager:debug("WAMP welcome frame ~p for SessionId ~p", [BinMsg, SessionId]),
+    WebSocketId ! {text, BinMsg},
     {reply, Req1, State};
 
 handle_call(_Request, _From, State) ->
@@ -165,6 +167,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 handle_frame(ServiceUrl, WebsocketId, Req, SessionId, JsonFrame, State) ->
     Message = ?json_decode(JsonFrame),
+    lager:debug("receive frame: ~p", [Message]),
     FrameCtx = #frame_ctx{service_url = ServiceUrl, 
                       request = Req,
                       session_id = SessionId,
@@ -180,7 +183,7 @@ init_wamp_directory() ->
     Applications = boss_env:get_env(applications, []),
     AllModuleList = list_wamp_modules(Applications),
     Mapping = boss_files:wamp_mapping(AllModuleList),
-    lager:info("Wamp Mapping ~p", [Mapping]), 
+    lager:debug("Wamp Mapping ~p", [Mapping]), 
     fill_dict(Mapping ++ [], dict:new()).
 
 list_wamp_modules(L) ->
