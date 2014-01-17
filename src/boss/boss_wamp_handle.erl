@@ -44,12 +44,12 @@ process_frame([?WAMP_CALL, CallId, Uri | Args], FrameCtx, State) ->
 process_frame([?WAMP_SUBSCRIBE, TopicUri], FrameCtx, State) ->
     Dir = State#state.directory,
     {Mod, _Fun} = get_MF_from_uri(TopicUri, Dir),
-    case call(Mod, suscribe, TopicUri, FrameCtx) of
+    case call(Mod, subscribe, TopicUri, FrameCtx) of
         {ok, {Topic, Since}} ->
             % ?? process_flag(trap_exit, true),
             spawn(?MODULE, start_agent, [Mod, Topic, Since, FrameCtx]);
         Err ->
-            lager:info("boss_mq:pull Error ~p", [Err]),            
+            lager:info("process frame subscribe error ~p", [Err]),            
             Err
     end,
     {ok, State};
