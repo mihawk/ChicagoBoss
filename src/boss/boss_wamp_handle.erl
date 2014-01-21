@@ -18,7 +18,7 @@
 process_frame([?WAMP_PREFIX, Prefix, Url], FrameCtx, State) ->
     CleanUrl = clean_url(Url),
     Path = proplists:get_value(path, CleanUrl),
-    Module = case dict:find(Path, State#state.directory) of 
+    Module = case dict:find(Path, State#state.wamp_directory) of 
                  {ok, Name } -> Name;
                  _ -> undefined
              end,
@@ -26,8 +26,8 @@ process_frame([?WAMP_PREFIX, Prefix, Url], FrameCtx, State) ->
     {ok, State};
 
 process_frame([?WAMP_CALL, CallId, Uri | Args], FrameCtx, State) ->
-    Dir = State#state.directory,
-    {Mod, Fun} = get_MF_from_uri(Uri, Dir),
+    Dirs = State#state.wamp_directory,
+    {Mod, Fun} = get_MF_from_uri(Uri, Dirs),
     lager:debug("Wamp CALL {~p, ~p, ~p}",[Mod, Fun, Args]),
     Reply = call(Mod, Fun, Args, FrameCtx),    
     Addresse = FrameCtx#frame_ctx.websocket_id,
@@ -43,8 +43,8 @@ process_frame([?WAMP_CALL, CallId, Uri | Args], FrameCtx, State) ->
     {ok, State};
 
 process_frame([?WAMP_SUBSCRIBE, TopicUri], FrameCtx, State) ->
-    Dir = State#state.directory,
-    {Mod, _Fun} = get_MF_from_uri(TopicUri, Dir),
+    Dirs = State#state.wamp_directory,
+    {Mod, _Fun} = get_MF_from_uri(TopicUri, Dirs),
     lager:debug("Wamp SUBSCRIBE call {~p, ~p, ~p}",[Mod, subscribe, TopicUri]),
     case call(Mod, subscribe, [TopicUri], FrameCtx) of
         {ok, {Topic, Since}} ->
@@ -58,8 +58,8 @@ process_frame([?WAMP_SUBSCRIBE, TopicUri], FrameCtx, State) ->
     {ok, State};
 
 process_frame([?WAMP_UNSUBSCRIBE, TopicUri], #frame_ctx{session_id=SessionId}=FrameCtx, State) ->    
-    Dir = State#state.directory,
-    {Mod, _Fun} = get_MF_from_uri(TopicUri, Dir),    
+    Dirs = State#state.wamp_directory,
+    {Mod, _Fun} = get_MF_from_uri(TopicUri, Dirs),    
     {ok, Topic} = call(Mod, unsubscribe, [TopicUri], FrameCtx),    
     Agent = boss_wamp:lookup_agent(SessionId, Topic),
     lager:debug("Wamp UNSUBSCRIBE agent ~p "
@@ -70,8 +70,8 @@ process_frame([?WAMP_UNSUBSCRIBE, TopicUri], #frame_ctx{session_id=SessionId}=Fr
     {ok, State};
 
 process_frame([?WAMP_PUBLISH, TopicUri, Event | Args], FrameCtx, State) ->
-    Dir = State#state.directory,
-    {Mod, _Fun} = get_MF_from_uri(TopicUri, Dir),
+    Dirs = State#state.wamp_directory,
+    {Mod, _Fun} = get_MF_from_uri(TopicUri, Dirs),
     Res =  call(Mod, publish, [TopicUri, Event] ++ Args , FrameCtx),        
     wamp_publish(Res, FrameCtx),
     {ok, State}.
@@ -106,13 +106,16 @@ maybe_pmod(Mod, Fun, Args, #frame_ctx{request=Req, session_id=SessionID}=FrameCt
     end.
 
 
-get_MF_from_uri(Url, _Dir) ->
+get_MF_from_uri(Url, Dirs) ->
     CleanUrl = clean_url(Url),
     Prefix = proplists:get_value(prefix, CleanUrl),
     case Prefix of 
         undefined ->
             Uri = proplists:get_value(uri, CleanUrl),
-            Module = boss_wamp:lookup_uri(Uri,2),
+            Module = case dict:find(Uri, Dirs) of 
+                         {ok, Name } -> Name;
+                         _ -> undefined
+                     end,
             Fun = proplists:get_value(postfix, CleanUrl),
             {Module, list_to_atom(binary_to_list(Fun))};
 
