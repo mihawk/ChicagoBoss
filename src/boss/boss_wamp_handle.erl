@@ -15,6 +15,25 @@
 
 -include("boss_wamp.hrl").
 
+-spec process_frame(nonempty_maybe_improper_list(),_,#state{wamp_directory::dict()}) -> {'ok',#state{wamp_directory::dict()}}.
+-spec call(_,atom(),_,_) -> {ok, any()} | {error, any()} | {error, any(), any()}.
+-spec apply_function(atom(),atom(),[any()],#frame_ctx{service_url::string(),session_id::string(),websocket_id::pid()}) -> any().
+-spec maybe_pmod(atom(),atom(),[any()],#frame_ctx{service_url::string(),session_id::string(),websocket_id::pid()}) -> any().
+-spec get_MF_from_uri(binary(),dict()) -> {atom(),atom()}.
+-spec clean_url(binary()) -> [{'host' | 'path' | 'postfix' | 'prefix' | 'protocol' | 'uri','http' | 'https' | 'undefined' | binary() | [{_,_},...]},...].
+-spec split_url(binary(),'undefined' | binary()) -> [{'host',binary() | [{_,_},...]} | {'path',binary()} | {'postfix','undefined' | binary()} | {'prefix',binary()} | {'protocol','http' | 'https'},...].
+-spec maybe_uri(binary()) -> [{'postfix','undefined' | binary()} | {'prefix',binary()},...].
+-spec split_host(80 | 443,binary()) -> {binary() | [{'hostname',binary()} | {'port',integer()},...],binary()}.
+-spec start_ws_agent_sup(_,_,_,#frame_ctx{service_url::string(),session_id::string(),websocket_id::pid()}) -> {'ok','normal' | 'shutdown' | 'unsubscribe' | 'wsclosed'}.
+-spec loop_receive_ws_agent_sup(pid(),_,_,_,#frame_ctx{service_url::string(),session_id::string(),websocket_id::pid()}) -> {'ok','normal' | 'shutdown' | 'unsubscribe' | 'wsclosed'}.
+-spec ws_agent(_,_,_,#frame_ctx{service_url::string(),session_id::string(),websocket_id::pid()}) -> no_return().
+-spec wamp_publish(_,_) -> any().
+-spec wamp_publish1([any()],#frame_ctx{service_url::string(),session_id::string(),websocket_id::pid()}) -> any().
+-spec wamp_publish1(_,#wamp_event{exclude_me::boolean(),exclude::[any()],eligible::[any()]},#frame_ctx{service_url::string(),session_id::string(),websocket_id::pid()}) -> any().
+-spec maybe_notify(_,[#wamp_event{exclude_me::boolean(),exclude::[any()],eligible::[any()]}],pid(),string()) -> [any()].
+-spec maybe_notify1(_,#wamp_event{exclude_me::boolean(),exclude::[any()],eligible::[any()]},pid(),string()) -> any().
+-spec notify(atom() | binary() | [any()] | number() | {_,_},atom() | binary() | [any()] | number() | {_,_},pid()) -> {'text',binary()}.
+
 process_frame([?WAMP_PREFIX, Prefix, Url], FrameCtx, State) ->
     CleanUrl = clean_url(Url),
     Path = proplists:get_value(path, CleanUrl),
@@ -279,10 +298,10 @@ wamp_publish1(Args, #frame_ctx{session_id=SessionId}=FrameCtx) when is_list(Args
                         Exclude0
                 end,
     WampEvent = #wamp_event{
-                   event=Event, 
+                   event     =Event, 
                    exclude_me=ExcludeMe, 
-                   exclude=Exclude, 
-                   eligible=Eligible
+                   exclude   =Exclude, 
+                   eligible  =Eligible
                   },
     wamp_publish1(Topic, WampEvent, FrameCtx).
     
@@ -302,8 +321,8 @@ maybe_notify1(Topic, #wamp_event{event=Event,
                                 eligible=[]}, Addressee, _) ->    
     notify(Topic, Event, Addressee);
 
-maybe_notify1(Topic, #wamp_event{event=Event, 
-                                exclude=Exclude, 
+maybe_notify1(Topic, #wamp_event{  event=Event, 
+                                 exclude=Exclude, 
                                 eligible=Eligible}, Addressee, SessionId) ->    
     case lists:member(SessionId, Eligible) of
         true ->
