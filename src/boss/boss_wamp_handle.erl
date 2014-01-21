@@ -69,7 +69,7 @@ process_frame([?WAMP_SUBSCRIBE, TopicUri], FrameCtx, State) ->
         {ok, {Topic, Since}} ->
             lager:debug("Wamp SUBSCRIBE return {topic:~p, since:~p}",[Topic, Since]),
             %% process_flag(trap_exit, true), %%??
-            spawn(?MODULE, start_agent, [Mod, Topic, Since, FrameCtx]);
+            spawn(?MODULE, start_ws_agent_sup, [Mod, Topic, Since, FrameCtx]);
         Err ->
             lager:debug("process frame subscribe error ~p", [Err]),            
             Err
