@@ -29,7 +29,9 @@
 
 -export([init_wamp_directory/0]).
 
--export([insert_prefix/3, lookup_prefix/1, lookup_prefix/2, delete_prefix/1]).
+-export([insert_prefix/3, 
+         lookup_prefix/1, lookup_prefix/2, 
+         delete_prefix/1]).
 -export([insert_agent/3, lookup_agent/2, delete_agent/2]).
 
 -include("boss_wamp.hrl").
@@ -91,7 +93,7 @@ delete_agent(SessionId, Topic) ->
 init(_) ->
     process_flag(trap_exit, true),
     lager:info("Starting Wamp service on ~p~n", [node()]),
-    {ok, #state{directory=init_wamp_directory()}}.
+    {ok, #state{wamp_directory=init_wamp_directory()}}.
     
 handle_call({welcome, _ServiceUrl, WebSocketId, Req, SessionId}, _From, State) ->    
     ServerInfo = "ChicagoBoss WAMP Server/" ++ ?__VERSION__,
@@ -182,7 +184,9 @@ handle_frame(ServiceUrl, WebsocketId, Req, SessionId, JsonFrame, State) ->
 init_wamp_directory() ->    
     Applications = boss_env:get_env(applications, []),
     AllModuleList = list_wamp_modules(Applications),
-    Mapping = boss_files:wamp_mapping(AllModuleList),
+    WampAuthModule = boss_env:get_env(wamp_auth_module, dayou),    
+    Mapping = boss_files:wamp_mapping(AllModuleList) ++ 
+        [{<<"http://api.wamp.ws/procedure">>, WampAuthModule}],
     lager:debug("Wamp Mapping ~p", [Mapping]), 
     fill_dict(Mapping ++ [], dict:new()).
 
