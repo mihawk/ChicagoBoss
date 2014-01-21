@@ -21,9 +21,7 @@
 -define(TAB, boss_wamp).
 
 -record(state, {
-          handler = undefined   ::atom(), 
-          internal = undefined  ,
-          directory = undefined :: dict()
+          wamp_directory = undefined :: dict()
          }).
 
 -record(frame_ctx, {
@@ -31,6 +29,13 @@
                   session_id  = undefined ::string(),
                   websocket_id= undefined ::pid(),
                   request     = undefined
+                 }).  
+
+-record(wamp_event, {
+                    event      = undefined ::any(),
+                    exclude_me = false     ::boolean(),
+                    exclude    = []        ::list(),
+                    eligible   = []        ::list()
                  }).  
 
 -define(json_encode(X), jsx:encode(X)).
