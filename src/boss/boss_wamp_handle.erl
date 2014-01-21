@@ -194,18 +194,16 @@ start_agent(Module, Topic, Since, FrameCtx) ->
             start_agent(Module, Topic, Since, FrameCtx)
     end.
 
-websocket_agent(Module, Topic, Since, #frame_ctx{websocket_id=Addressee}=FrameCtx) ->
+websocket_agent(Module, Topic, Since, 
+                #frame_ctx{websocket_id=Addressee, session_id=SessionId}=FrameCtx) ->
     erlang:monitor(process, Addressee),
     Me = self(),
     tinymq:subscribe(Topic, Since, Me), 
     receive
         {_From, Timestamp, Messages} ->
             case call(Module, event, [Topic, Messages], FrameCtx) of
-                {ok, {Topic1, Event}} -> 
-                    Msg = [?WAMP_EVENT, Topic1, Event],
-                    Json = ?json_encode(Msg),
-                    lager:debug("Wamp EVENT ~p", [Msg]),
-                    Addressee ! {text, Json};
+                {ok, {Topic1, Events}} -> 
+                    maybe_notify(Topic1, Events, Addressee, SessionId);
                 Err ->
                     lager:debug("Wamp EVENT error ~p", [Err]),
                     Err
@@ -234,31 +232,64 @@ websocket_agent(Module, Topic, Since, #frame_ctx{websocket_id=Addressee}=FrameCt
 wamp_publish({ok, Args}, FrameCtx) ->  wamp_publish1(Args, FrameCtx);
 wamp_publish(Err, _) ->  lager:debug("wamp publish error ~p", [Err]).
 
-wamp_publish1(Args, FrameCtx) when is_list(Args)->
-    Topic = proplists:get_value(topic, Args),
-    Event = proplists:get_value(event, Args),
+wamp_publish1(Args, #frame_ctx{session_id=SessionId}=FrameCtx) when is_list(Args)->
+    Topic     = proplists:get_value(topic, Args),
+    Event     = proplists:get_value(event, Args),
     ExcludeMe = proplists:get_value(exclude_me, Args),
-    Exclude = proplists:get_value(exclude, Args),
-    Eligible = proplists:get_value(eligible, Args),
-    case ExcludeMe of 
-        undefined ->
-            wamp_publish1(Topic, Event, Exclude, Eligible, FrameCtx);
-        true ->
-            wamp_publish1(Topic, Event, Exclude, Eligible, FrameCtx);            
-        _ ->
-            wamp_publish1(Topic, Event, ExcludeMe, Eligible, FrameCtx)
-    end.
+    Exclude0  = proplists:get_value(exclude, Args, []),
+    Eligible  = proplists:get_value(eligible, Args, []),    
+
+    Exclude   = case ExcludeMe of                        
+                    true ->
+                        [SessionId | Exclude0];
+                    _ ->
+                        Exclude0
+                end,
+    WampEvent = #wamp_event{
+                   event=Event, 
+                   exclude_me=ExcludeMe, 
+                   exclude=Exclude, 
+                   eligible=Eligible
+                  },
+    wamp_publish1(Topic, WampEvent, FrameCtx).
+    
+    
             
-wamp_publish1(Topic, Event, Exc, Eli, FrameCtx) when is_binary(Topic)->
-    wamp_publish1(binary_to_list(Topic), Event, Exc, Eli, FrameCtx);
-wamp_publish1(Topic, Event, _, _, _FrameCtx) ->
+wamp_publish1(Topic, Event, FrameCtx) when is_binary(Topic)->
+    wamp_publish1(binary_to_list(Topic), Event, FrameCtx);
+wamp_publish1(Topic, Event, _FrameCtx) ->
     lager:debug("boss_mq:push(~p, ~p)", [Topic, Event]),
     boss_mq:push(Topic, Event).
 
-%%% TODO
-%%% exludeMe, Eligible ? extend boss_mq? tinymq?
-%%% boss_mq:push(Topic, Event, ExcludeMe).
-%%% boss_mq:push(Topic, Event, Exclude, Eligible).
+maybe_notify(Topic, Events, Addressee, SessionId) when is_list(Events) ->
+    [maybe_notify1(Topic, X, Addressee, SessionId) || X <- Events].
 
+maybe_notify1(Topic, #wamp_event{event=Event,
+                                exclude_me=undefined, 
+                                exclude=[], 
+                                eligible=[]}, Addressee, _) ->    
+    notify(Topic, Event, Addressee);
+
+maybe_notify1(Topic, #wamp_event{event=Event, 
+                                exclude=Exclude, 
+                                eligible=Eligible}, Addressee, SessionId) ->    
+    case lists:member(SessionId, Eligible) of
+        true ->
+            notify(Topic, Event, Addressee);            
+        false ->
+            case lists:member(SessionId, Exclude) of 
+                true ->
+                    lager:debug("Wamp Event ~p exclude true ~p in ~p", 
+                                [Event, SessionId, Exclude]);
+                false ->
+                    notify(Topic, Event, Addressee)
+            end
+    end.
+                    
+notify(Topic, Event, Addressee) ->
+    Msg = [?WAMP_EVENT, Topic, Event],
+    Json = ?json_encode(Msg),
+    lager:debug("Wamp EVENT ~p notify ~p", [Msg, Addressee]),
+    Addressee ! {text, Json}.
 
 
