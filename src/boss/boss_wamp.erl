@@ -92,14 +92,14 @@ init(_) ->
     lager:info("Starting Wamp service on ~p~n", [node()]),
     {ok, #state{wamp_directory=init_wamp_directory()}}.
     
-handle_call({welcome, _ServiceUrl, WebSocketId, Req, _SessionId}, _From, State) ->    
+handle_call({welcome, _ServiceUrl, WebSocketId, Req, SessionId}, _From, State) ->    
     ServerInfo = "ChicagoBoss WAMP Server/" ++ ?__VERSION__,
     WampId = generate_id(), %% WampId = SessionId    
     WelcomeMsg = [?WAMP_WELCOME, list_to_binary(WampId), ?WAMP_PROTOCOL_VERSION,
                   list_to_binary(ServerInfo)],    
     Req1 = cowboy_req:set_resp_header(<<"Sec-Websocket-Protocol">>, <<"wamp">>, Req),
     BinMsg = ?json_encode(WelcomeMsg),
-    lager:debug("WAMP welcome frame ~p for SessionId ~p", [BinMsg, WampId]),
+    lager:debug("WAMP welcome frame ~p for WampId ~p, SessionId", [BinMsg, WampId, SessionId]),
     WebSocketId ! {text, BinMsg},
     %%todo call init  <app>_wamp:init() ??
     {reply, {WampId, Req1}, State};
