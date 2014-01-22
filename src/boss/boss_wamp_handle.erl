@@ -16,23 +16,24 @@
 -include("boss_wamp.hrl").
 
 -spec process_frame(nonempty_maybe_improper_list(),_,#state{wamp_directory::dict()}) -> {'ok',#state{wamp_directory::dict()}}.
--spec call(_,atom(),_,_) -> {ok, any()} | {error, any()} | {error, any(), any()}.
--spec apply_function(atom(),atom(),[any()],#frame_ctx{service_url::string(),session_id::string(),websocket_id::pid()}) -> any().
--spec maybe_pmod(atom(),atom(),[any()],#frame_ctx{service_url::string(),session_id::string(),websocket_id::pid()}) -> any().
--spec get_MF_from_uri(binary(),dict()) -> {atom(),atom()}.
+-spec call(_,atom(),_,_) -> any().
+-spec apply_function(atom(),atom(),[any()],#frame_ctx{service_url::string(),session_id::string(),wamp_id::string(),websocket_id::pid()}) -> any().
+-spec maybe_pmod(atom(),atom(),[any()],#frame_ctx{service_url::string(),session_id::string(),wamp_id::string(),websocket_id::pid()}) -> any().
+-spec get_MF_from_uri(binary(),dict()) -> {_,atom()}.
 -spec clean_url(binary()) -> [{'host' | 'path' | 'postfix' | 'prefix' | 'protocol' | 'uri','http' | 'https' | 'undefined' | binary() | [{_,_},...]},...].
 -spec split_url(binary(),'undefined' | binary()) -> [{'host',binary() | [{_,_},...]} | {'path',binary()} | {'postfix','undefined' | binary()} | {'prefix',binary()} | {'protocol','http' | 'https'},...].
 -spec maybe_uri(binary()) -> [{'postfix','undefined' | binary()} | {'prefix',binary()},...].
 -spec split_host(80 | 443,binary()) -> {binary() | [{'hostname',binary()} | {'port',integer()},...],binary()}.
--spec start_ws_agent_sup(_,_,_,#frame_ctx{service_url::string(),session_id::string(),websocket_id::pid()}) -> {'ok','normal' | 'shutdown' | 'unsubscribe' | 'wsclosed'}.
--spec loop_receive_ws_agent_sup(pid(),_,_,_,#frame_ctx{service_url::string(),session_id::string(),websocket_id::pid()}) -> {'ok','normal' | 'shutdown' | 'unsubscribe' | 'wsclosed'}.
--spec ws_agent(_,_,_,#frame_ctx{service_url::string(),session_id::string(),websocket_id::pid()}) -> no_return().
+-spec start_ws_agent_sup(_,_,_,#frame_ctx{service_url::string(),session_id::string(),wamp_id::string(),websocket_id::pid()}) -> {'ok','normal' | 'shutdown' | 'unsubscribe' | 'wsclosed'}.
+-spec loop_receive_ws_agent_sup(pid(),_,_,_,#frame_ctx{service_url::string(),session_id::string(),wamp_id::string(),websocket_id::pid()}) -> {'ok','normal' | 'shutdown' | 'unsubscribe' | 'wsclosed'}.
+-spec ws_agent(_,_,_,#frame_ctx{service_url::string(),session_id::string(),wamp_id::string(),websocket_id::pid()}) -> no_return().
 -spec wamp_publish(_,_) -> any().
--spec wamp_publish1([any()],#frame_ctx{service_url::string(),session_id::string(),websocket_id::pid()}) -> any().
--spec wamp_publish1(_,#wamp_event{exclude_me::boolean(),exclude::[any()],eligible::[any()]},#frame_ctx{service_url::string(),session_id::string(),websocket_id::pid()}) -> any().
+-spec wamp_publish1([any()],#frame_ctx{service_url::string(),session_id::string(),wamp_id::string(),websocket_id::pid()}) -> any().
+-spec wamp_publish1(_,#wamp_event{exclude_me::boolean(),exclude::[any()],eligible::[any()]},#frame_ctx{service_url::string(),session_id::string(),wamp_id::string(),websocket_id::pid()}) -> any().
 -spec maybe_notify(_,[#wamp_event{exclude_me::boolean(),exclude::[any()],eligible::[any()]}],pid(),string()) -> [any()].
 -spec maybe_notify1(_,#wamp_event{exclude_me::boolean(),exclude::[any()],eligible::[any()]},pid(),string()) -> any().
 -spec notify(atom() | binary() | [any()] | number() | {_,_},atom() | binary() | [any()] | number() | {_,_},pid()) -> {'text',binary()}.
+
 
 process_frame([?WAMP_PREFIX, Prefix, Url], FrameCtx, State) ->
     CleanUrl = clean_url(Url),
@@ -76,16 +77,16 @@ process_frame([?WAMP_SUBSCRIBE, TopicUri], FrameCtx, State) ->
     end,
     {ok, State};
 
-process_frame([?WAMP_UNSUBSCRIBE, TopicUri], #frame_ctx{session_id=SessionId}=FrameCtx, State) ->    
+process_frame([?WAMP_UNSUBSCRIBE, TopicUri], #frame_ctx{wamp_id=WampId}=FrameCtx, State) ->    
     Dirs = State#state.wamp_directory,
     {Mod, _Fun} = get_MF_from_uri(TopicUri, Dirs),    
     {ok, Topic} = call(Mod, unsubscribe, [TopicUri], FrameCtx),    
-    Agent = boss_wamp:lookup_agent(SessionId, Topic),
+    Agent = boss_wamp:lookup_agent(WampId, Topic),
     lager:debug("Wamp UNSUBSCRIBE agent ~p "
-                "for sessionId ~p on topic ~p~n", 
-                [Agent, SessionId, Topic]),
+                "for WampId ~p on topic ~p~n", 
+                [Agent, WampId, Topic]),
     Agent ! shutdown,
-    boss_wamp:delete_agent(SessionId, Topic),
+    boss_wamp:delete_agent(WampId, Topic),
     {ok, State};
 
 process_frame([?WAMP_PUBLISH, TopicUri, Event | Args], FrameCtx, State) ->
@@ -106,15 +107,15 @@ call(Module, Function, Args, FrameCtx) when is_atom(Module),
 apply_function(Module, Function, Args, FrameCtx) when is_atom(Module) ->
     maybe_pmod(Module, Function, Args, FrameCtx).
 
-maybe_pmod(Mod, Fun, Args, #frame_ctx{request=Req, session_id=SessionID}=FrameCtx) ->
+maybe_pmod(Mod, Fun, Args, #frame_ctx{request=Req, wamp_id=WampId}=FrameCtx) ->
     case proplists:get_value(new, Mod:module_info(exports), undefined) of
         undefined ->
             erlang:apply(Mod, Fun, Args);
         N ->
             Instance = case N of
                            1 -> Mod:new(Req);
-                           2 -> Mod:new(Req, SessionID);
-                           3 -> Mod:new(Req, SessionID, FrameCtx)
+                           2 -> Mod:new(Req, WampId);
+                           3 -> Mod:new(Req, WampId, FrameCtx)
                        end,
             erlang:apply(Instance, Fun, Args)
     end.
@@ -197,55 +198,55 @@ start_ws_agent_sup(Module, Topic, Since, ReqCtx) when is_binary(Topic) ->
 start_ws_agent_sup(Module, Topic, Since, FrameCtx) ->
     Agent = spawn_link(?MODULE, ws_agent, [Module, Topic, Since, FrameCtx]),
     lager:info("~p start ws agent ~p on topic ~p~n", [self(), Agent, Topic]),
-    boss_wamp:insert_agent(Agent, FrameCtx#frame_ctx.session_id, Topic),    
+    %boss_wamp:insert_agent(Agent, FrameCtx#frame_ctx.session_id, Topic),    
+    boss_wamp:insert_agent(Agent, FrameCtx#frame_ctx.wamp_id, Topic),    
     loop_receive_ws_agent_sup(Agent, Module, Since, Topic, FrameCtx ).
 
-
 loop_receive_ws_agent_sup(Agent, Module, Since, Topic, 
-                          #frame_ctx{session_id=SessionId}=FrameCtx) ->    
+                          #frame_ctx{wamp_id=WampId}=FrameCtx) ->    
     receive 
         {'EXIT', Pid, normal} -> % 
-            boss_wamp:delete_agent(SessionId, Topic),
+            boss_wamp:delete_agent(WampId, Topic),
             lager:debug("ws_agent exit for reason {unsubscribe} "
                         "on topic ~p "
-                        "for sessionId ~p, no action taken"
-                       ,[Pid, Topic, SessionId]),
+                        "for wampId ~p, no action taken"
+                       ,[Pid, Topic, WampId]),
             {ok, normal};
         {'EXIT', Pid, unsubscribe} -> % receive frame unsubscribe
-            boss_wamp:delete_agent(SessionId, Topic),
+            boss_wamp:delete_agent(WampId, Topic),
             lager:debug("ws_agent exit for reason {unsubscribe} "
                         "on topic ~p "
-                        "for sessionId ~p, no action taken"
-                       ,[Pid, Topic, SessionId]),
+                        "for wampId ~p, no action taken"
+                       ,[Pid, Topic, WampId]),
             {ok, unsubscribe};
         {'EXIT', Pid, wsclosed} -> % ws closed
-            boss_wamp:delete_agent(SessionId, Topic),
+            boss_wamp:delete_agent(WampId, Topic),
             lager:debug("ws_agent exit for reason {wsclosed} "
                         "on topic ~p "
-                        "for sessionId ~p, no action taken"
-                       ,[Pid, Topic, SessionId]),
+                        "for wampId ~p, no action taken"
+                       ,[Pid, Topic, WampId]),
             {ok, wsclosed};
         {'EXIT', Pid, shutdown} -> % ws closed
-            boss_wamp:delete_agent(SessionId, Topic),
+            boss_wamp:delete_agent(WampId, Topic),
             lager:debug("ws_agent exit for reason {shutdown} "
                         "on topic ~p "
-                        "for sessionId ~p, no action taken"
-                       ,[Pid, Topic, SessionId]),
+                        "for wampId ~p, no action taken"
+                       ,[Pid, Topic, WampId]),
             {ok, shutdown};
 
         {'EXIT', Pid, Reason} ->
-            boss_wamp:delete_agent(SessionId, Topic),
+            boss_wamp:delete_agent(WampId, Topic),
             lager:debug("ws_agent exit for reason ~p sup (~p) "
                         "ws_agent (~p) on topic ~p "
-                        "for sessionId ~p, restart ws_agent"
-                       ,[Reason, Pid, Topic, SessionId]),
+                        "for wampId ~p, restart ws_agent"
+                       ,[Reason, Pid, Topic, WampId]),
             start_ws_agent_sup(Module, Topic, Since, FrameCtx);        
          _ ->
             loop_receive_ws_agent_sup(Agent, Module, Since, Topic, FrameCtx)
     end.
 
 ws_agent(Module, Topic, Since, #frame_ctx{websocket_id=Addressee, 
-                                                 session_id=SessionId}=FrameCtx) ->
+                                          wamp_id=WampId}=FrameCtx) ->
     erlang:monitor(process, Addressee),
     Me = self(),
     tinymq:subscribe(Topic, Since, Me), %%todo: extend boss_mq:subscribe ?
@@ -253,7 +254,7 @@ ws_agent(Module, Topic, Since, #frame_ctx{websocket_id=Addressee,
         {_From, Timestamp, Messages} ->
             case call(Module, event, [Topic, Messages], FrameCtx) of
                 {ok, {Topic1, Events}} -> 
-                    maybe_notify(Topic1, Events, Addressee, SessionId);
+                    maybe_notify(Topic1, Events, Addressee, WampId);
                 Err ->
                     lager:debug("Wamp EVENT error ~p", [Err]),
                     Err
@@ -284,19 +285,23 @@ ws_agent(Module, Topic, Since, #frame_ctx{websocket_id=Addressee,
 wamp_publish({ok, Args}, FrameCtx) ->  wamp_publish1(Args, FrameCtx);
 wamp_publish(Err, _) ->  lager:debug("wamp publish error ~p", [Err]).
 
-wamp_publish1(Args, #frame_ctx{session_id=SessionId}=FrameCtx) when is_list(Args)->
+wamp_publish1(Args, #frame_ctx{wamp_id=WampId}=FrameCtx) when is_list(Args)->
     Topic     = proplists:get_value(topic, Args),
     Event     = proplists:get_value(event, Args),
     ExcludeMe = proplists:get_value(exclude_me, Args, false),
     Exclude0  = proplists:get_value(exclude, Args, []),
     Eligible  = proplists:get_value(eligible, Args, []),    
-
+    
     Exclude   = case ExcludeMe of                        
                     true ->
-                        [SessionId | Exclude0];
+                        [WampId | Exclude0];
                     _ ->
+
                         Exclude0
                 end,
+
+    lager:info("wamp_publish1: ExcludeMe ~p, Exclude: ~p", [ExcludeMe, Exclude]),
+
     WampEvent = #wamp_event{
                    event     =Event, 
                    exclude_me=ExcludeMe, 
@@ -308,12 +313,16 @@ wamp_publish1(Args, #frame_ctx{session_id=SessionId}=FrameCtx) when is_list(Args
                 
 wamp_publish1(Topic, Event, FrameCtx) when is_binary(Topic)->
     wamp_publish1(binary_to_list(Topic), Event, FrameCtx);
+
+wamp_publish1(Topic, Event, FrameCtx) when is_binary(Topic)->
+    wamp_publish1(binary_to_list(Topic), Event, FrameCtx);
+
 wamp_publish1(Topic, Event, _FrameCtx) ->
     lager:debug("boss_mq:push(~p, ~p)", [Topic, Event]),
     boss_mq:push(Topic, Event).
 
-maybe_notify(Topic, Events, Addressee, SessionId) when is_list(Events) ->
-    [maybe_notify1(Topic, X, Addressee, SessionId) || X <- Events].
+maybe_notify(Topic, Events, Addressee, WampId) when is_list(Events) ->
+    [maybe_notify1(Topic, X, Addressee, WampId) || X <- Events].
 
 maybe_notify1(Topic, #wamp_event{event=Event,
                                 exclude_me=false, 
@@ -323,18 +332,25 @@ maybe_notify1(Topic, #wamp_event{event=Event,
 
 maybe_notify1(Topic, #wamp_event{  event=Event, 
                                  exclude=Exclude, 
-                                eligible=Eligible}, Addressee, SessionId) ->    
-    case lists:member(SessionId, Eligible) of
+                                eligible=Eligible}, Addressee, WampId) when is_list(Exclude),
+                                                                            is_list(Eligible)-> 
+    lager:info("maybe_notify Exclude, WampId ~p : ~p", [WampId,Eligible]),
+    case lists:member(WampId, Exclude) of 
         true ->
-            notify(Topic, Event, Addressee);            
+            lager:debug("Wamp Event ~p exclude true ~p in ~p", 
+                        [Event, WampId, Exclude]);
         false ->
-            case lists:member(SessionId, Exclude) of 
-                true ->
-                    lager:debug("Wamp Event ~p exclude true ~p in ~p", 
-                                [Event, SessionId, Exclude]);
-                false ->
-                    notify(Topic, Event, Addressee)
-            end
+            case Eligible of
+                [] ->
+                    notify(Topic, Event, Addressee);
+                Eligible ->
+                    case lists:member(WampId, Eligible) of
+                        true ->
+                            notify(Topic, Event, Addressee);
+                        false ->
+                            ok
+                    end
+            end                            
     end.
                     
 notify(Topic, Event, Addressee) ->

@@ -18,6 +18,8 @@
 -define(WAMP_PUBLISH,     7).
 -define(WAMP_EVENT,       8).
 
+-define(ALLOWEDCHARS, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").
+
 -define(TAB, boss_wamp).
 
 -record(state, {
@@ -27,6 +29,7 @@
 -record(frame_ctx, {
                   service_url = undefined ::string(),
                   session_id  = undefined ::string(),
+                  wamp_id     = undefined ::string(),
                   websocket_id= undefined ::pid(),
                   request     = undefined
                  }).  

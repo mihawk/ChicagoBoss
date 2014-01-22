@@ -13,9 +13,8 @@
 -export([start_link/2, start_link/0]).
 
 -export([welcome/4]). 
--export([incoming/5]). 
--export([join/4]). 
--export([close/5]). 
+-export([incoming/6]). 
+-export([close/6]). 
 
 
 %% gen_server callbacks
@@ -61,12 +60,10 @@ start_link(Handler, ServiceUrl) when is_atom(Handler)->
 
 welcome(ServiceUrl, WebSocketId, Req, SessionId) ->
     gen_server:call({global, ?MODULE}, {welcome, ServiceUrl, WebSocketId, Req, SessionId}).
-join(ServiceUrl, WebSocketId, Req, SessionId) ->
-    gen_server:cast({global, ?MODULE}, {join, ServiceUrl, WebSocketId, Req, SessionId}).
-close(Reason, ServiceUrl, WebSocketId, Req, SessionId) ->
-    gen_server:cast({global, ?MODULE}, {terminate, Reason, ServiceUrl, WebSocketId, Req, SessionId}).
-incoming(ServiceUrl, WebSocketId, Req, SessionId, Message) ->
-    gen_server:cast({global, ?MODULE}, {frame, ServiceUrl, WebSocketId, Req, SessionId, Message}).
+close(Reason, ServiceUrl, WebSocketId, Req, SessionId, WampId) ->
+    gen_server:cast({global, ?MODULE}, {terminate, Reason, ServiceUrl, WebSocketId, Req, SessionId, WampId}).
+incoming(ServiceUrl, WebSocketId, Req, SessionId, Message, WampId) ->
+    gen_server:cast({global, ?MODULE}, {frame, ServiceUrl, WebSocketId, Req, SessionId, Message, WampId}).
 
 
 insert_prefix(Prefix, Module, WebSocketId) ->
@@ -95,28 +92,28 @@ init(_) ->
     lager:info("Starting Wamp service on ~p~n", [node()]),
     {ok, #state{wamp_directory=init_wamp_directory()}}.
     
-handle_call({welcome, _ServiceUrl, WebSocketId, Req, SessionId}, _From, State) ->    
+handle_call({welcome, _ServiceUrl, WebSocketId, Req, _SessionId}, _From, State) ->    
     ServerInfo = "ChicagoBoss WAMP Server/" ++ ?__VERSION__,
-    WelcomeMsg = [?WAMP_WELCOME, SessionId, ?WAMP_PROTOCOL_VERSION,
+    WampId = generate_id(), %% WampId = SessionId    
+    WelcomeMsg = [?WAMP_WELCOME, list_to_binary(WampId), ?WAMP_PROTOCOL_VERSION,
                   list_to_binary(ServerInfo)],    
     Req1 = cowboy_req:set_resp_header(<<"Sec-Websocket-Protocol">>, <<"wamp">>, Req),
     BinMsg = ?json_encode(WelcomeMsg),
-    lager:debug("WAMP welcome frame ~p for SessionId ~p", [BinMsg, SessionId]),
+    lager:debug("WAMP welcome frame ~p for SessionId ~p", [BinMsg, WampId]),
     WebSocketId ! {text, BinMsg},
-    {reply, Req1, State};
+    %%todo call init  <app>_wamp:init() ??
+    {reply, {WampId, Req1}, State};
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
 
-handle_cast({join, _ServiceUrl, _WebSocketId, _Req, _SessionId}, State) ->
+handle_cast({terminate, _Reason, _ServiceUrl, _WebSocketId, _Req, _SessionId, _WampId}, State) ->
+    %%todo call terminate  <app>_wamp:terminate() ??
     {noreply, State};
 
-handle_cast({terminate, _Reason, _ServiceUrl, _WebSocketId, _Req, _SessionId}, State) ->
-    {noreply, State};
-
-handle_cast({frame, ServiceUrl, WebSocketId, Req, SessionId, Frame}, State) ->
-    handle_frame(ServiceUrl, WebSocketId, Req, SessionId, Frame, State),
+handle_cast({frame, ServiceUrl, WebSocketId, Req, SessionId, Frame, WampId}, State) ->
+    handle_frame(ServiceUrl, WebSocketId, Req, SessionId, Frame, WampId, State),
     {noreply, State};
 
 handle_cast(_Msg, State) ->    
@@ -167,12 +164,13 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-handle_frame(ServiceUrl, WebsocketId, Req, SessionId, JsonFrame, State) ->
+handle_frame(ServiceUrl, WebsocketId, Req, SessionId, JsonFrame, WampId, State) ->
     Message = ?json_decode(JsonFrame),
     lager:debug("receive frame: ~p", [Message]),
     FrameCtx = #frame_ctx{service_url = ServiceUrl, 
                       request = Req,
                       session_id = SessionId,
+                      wamp_id = WampId,
                       websocket_id = WebsocketId},
     %%spawn a process for each frame
     process_flag(trap_exit, true),    
@@ -201,3 +199,12 @@ fill_dict([], Dict) -> Dict;
 fill_dict([{K,V}|L], Dict) -> 
     fill_dict(L, dict:store(K,V, Dict)).
 
+generate_id() ->
+    get_random_string(16, ?ALLOWEDCHARS).
+
+get_random_string(Length, AllowedChars) ->
+    lists:foldl(fun(_, Acc) ->
+                        [lists:nth(random:uniform(length(AllowedChars)),
+                                   AllowedChars)]
+                            ++ Acc
+                end, [], lists:seq(1, Length)).

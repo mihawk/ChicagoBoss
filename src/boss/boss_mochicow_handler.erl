@@ -13,7 +13,7 @@ init({_Any, http}, Req, _Opts) ->
 	{<<"WebSocket">>, _Req2} -> {upgrade, protocol, cowboy_websocket}
     end.
 
--record(state, {websocket_id, session_id, service_url, protocol}).
+-record(state, {websocket_id, session_id, service_url, protocol, wamp_id}).
 
 loop(Req) ->
     boss_web_controller_handle_request:handle_request(Req, 
@@ -38,9 +38,10 @@ websocket_init(_Any, Req, _Opts) ->
 websocket_handle({text, Msg}, Req, 
                  #state{websocket_id=WebsocketId, 
                         session_id=SessionId, 
+                        wamp_id=WampId, 
                         service_url=ServiceUrl,
                         protocol= <<"wamp">>} = State) ->
-    boss_wamp:incoming(ServiceUrl, WebsocketId, Req, SessionId, Msg),
+    boss_wamp:incoming(ServiceUrl, WebsocketId, Req, SessionId, Msg, WampId),
     {ok, Req, State, hibernate};
 
 websocket_handle({text, Msg}, Req, State) ->
@@ -62,9 +63,10 @@ websocket_info(_Info, Req, State) ->
 websocket_terminate(Reason, Req,
                     #state{websocket_id=WebsocketId, 
                            session_id=SessionId, 
-                           service_url=ServiceUrl,
+                           wamp_id=WampId,
+                           service_url=ServiceUrl,                           
                            protocol = <<"wamp">>}) ->
-    boss_wamp:close(Reason, ServiceUrl, WebsocketId, Req, SessionId),
+    boss_wamp:close(Reason, ServiceUrl, WebsocketId, Req, SessionId, WampId),
     ok;
 
 websocket_terminate(Reason, Req, State) ->
@@ -78,8 +80,8 @@ handle_protocol(Req, #state{websocket_id=WebsocketId,
                             session_id=SessionId,
                             service_url=ServiceUrl,
                             protocol= <<"wamp">> }=State) ->
-    Req2 = boss_wamp:welcome(ServiceUrl, WebsocketId, Req, SessionId),
-    config_websocket(Req2, State);
+    {WampId, Req2} = boss_wamp:welcome(ServiceUrl, WebsocketId, Req, SessionId),
+    config_websocket(Req2, State#state{wamp_id=WampId});
 handle_protocol(Req, #state{websocket_id=WebsocketId, 
                             session_id=SessionId,
                             service_url=ServiceUrl}=State) ->
