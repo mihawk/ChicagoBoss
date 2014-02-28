@@ -2,6 +2,8 @@
 -export([
 	websocket_list/1,
 	websocket_mapping/3,
+	wamp_list/1,
+	wamp_mapping/1,
         dot_app_src/1,
                     init_file_list/1, language_list/1, mail_controller_path/0,
         model_list/1,
@@ -27,8 +29,10 @@
 -type input_string() :: string().
 -spec root_priv_dir(_) -> input_string().
 -spec websocket_mapping(_,_,[any()]) -> any().
+-spec wamp_mapping([any()]) -> any().
 -spec mail_controller_path() -> [input_string(),...].
 -spec websocket_list(_) -> [any()].
+-spec wamp_list(_) -> [any()].
 -spec model_list(_) -> [any()].
 -spec lib_module_list(_) -> [any()].
 -spec web_controller_list(_) -> [any()].
@@ -61,6 +65,26 @@ root_priv_dir(App) ->
                 Dir -> Dir
             end
    end.
+
+%%
+%% proc/uri -> module
+%% simple/calculator -> <app_name>_simple_calculator_<wamp>
+%% /app_name/<uri> -> <app_name>_<>_<wamp
+wamp_mapping(Modules) ->
+    lists:foldl(fun([], Acc) -> Acc;
+		   (M, Acc) -> 
+			L1 = 0,
+		        L2 = string:len(M),
+			L3 = string:len("_wamp"),
+			L4 = string:substr(M, 
+				      L1 + 1, 
+				      L2 - (L1+L3)),
+                        UriTokens = string:tokens(L4, "_"),
+                        Url = string:join(UriTokens, "/"),                         
+			[{list_to_binary(Url), list_to_atom(M)}] ++ Acc			
+		end, [], Modules).
+
+
 websocket_mapping(BaseURL, AppName, Modules) ->
     lists:foldl(fun([], Acc) -> Acc;
 		   (M, Acc) -> 
@@ -88,6 +112,16 @@ websocket_list(AppName) ->
         false ->
             lists:map(fun atom_to_list/1, boss_env:get_env(AppName, websocket_modules, []))
     end.
+
+wamp_list([]) -> [];
+wamp_list(AppName) ->
+    case boss_env:is_developing_app(AppName) of
+        true ->
+            boss_files_util:module_list(AppName, boss_files_util:wamp_path());
+        false ->
+            lists:map(fun atom_to_list/1, boss_env:get_env(AppName, wamp_modules, []))
+    end.
+
 
 model_list(AppName) ->
     case boss_env:is_developing_app(AppName) of

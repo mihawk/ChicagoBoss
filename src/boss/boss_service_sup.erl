@@ -50,6 +50,16 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 
+start_services(SupPid, boss_wamp) ->
+    boss_wamp = ets:new(boss_wamp, [ordered_set, public, named_table, 
+                                     {write_concurrency, true}]), 
+    {ok, BossWampPid} = 
+	supervisor:start_child(SupPid,
+			       {boss_wamp, {boss_wamp, start_link, []},
+				permanent, 5000, worker, [boss_wamp]}),
+    {ok, BossWampPid};
+
+
 start_services(SupPid, boss_websocket_router) ->
     {ok, BossWebSocketRouterPid} = 
 	supervisor:start_child(SupPid,

@@ -134,6 +134,11 @@ load_libraries(Application) ->
 load_libraries(Application, OutDir) ->
     load_dirs(boss_files_util:lib_path(), Application, OutDir, fun compile/2).
 
+load_wamp_modules(Application) ->
+    load_wamp_modules(Application, boss_files_util:ebin_dir()).
+load_wamp_modules(Application, OutDir) ->
+    load_dirs(boss_files_util:wamp_path(), Application, OutDir, fun compile/2).
+
 load_services_websockets(Application) ->
     load_services_websockets(Application, boss_files_util:ebin_dir()).
 load_services_websockets(Application, OutDir) ->
