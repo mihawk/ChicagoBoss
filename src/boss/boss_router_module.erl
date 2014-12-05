@@ -11,11 +11,13 @@
 %%
 %% -export([
 %%           domains/0
+%%          ,base_url/1
 %%          ,route/1
 %%          ,unroute/3
 %%          ,handle/1
 %%         ]).
 %%
+%% base_url() -> "/". 
 %% domains() -> all. %% ["mydomain.com","toto.com"]
 %%
 %% %% your routes
@@ -48,7 +50,8 @@
          ,handle/2 
          ,get_all/1
          ,set_controllers/2
-         ,router_pid/1
+         ,base_url/1
+         ,static_prefix/1
         ]).
 
 %%
@@ -64,6 +67,8 @@ start(Options) ->
     App = proplists:get_value(application, Options),
     {ok, App}.
 
+
+    
 stop() ->
     lager:info("stoping router module based routing (experimental)..."),
     ok.
@@ -72,9 +77,19 @@ reload(App) ->
     %% TODO: recompile ?? boss_router_compiler ??
     ok.
 
-router_pid(App) ->
+router_pid(App) -> 
     App.
 
+base_url(App) ->
+    RouteModule = list_to_atom(atom_to_list(App) ++ "_routes"),
+    %%lager:info("~p base_url ~p...->~p", [?MODULE, App, RouteModule]),
+    RouteModule:base_url().
+
+static_prefix(App) ->
+    RouteModule = list_to_atom(atom_to_list(App) ++ "_routes"),
+    %%lager:info("~p static_prefix ~p...->~p", [?MODULE, App, RouteModule]),
+    RouteModule:static_prefix().
+    
 route(App, Url) ->
     RouteModule = list_to_atom(atom_to_list(App) ++ "_routes"),
     Controllers = boss_files:web_controller_list(App), 
