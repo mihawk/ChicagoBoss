@@ -18,10 +18,17 @@
 %%
 %% domains() -> all. %% ["mydomain.com","toto.com"]
 %%
+%% %% your routes
 %% route("/") ->  {"<app>_<name>_controller", "index", []};
-%% route(_) ->  undefined.            
+%% route(  _) ->  undefined.            
 %%
+%% %% used for redirect & moved directive --> Location" : "Url"
+%% unroute(Controller, Acction, Params) -> Url;
+%% unroute(         _,       _,      _) -> undefined.
+%%  
+%% %%handle(404) -> {Controller, Action, Params};
 %% handle(_) -> undefined.
+%%
 %%
 
 -module(boss_router_module).
@@ -152,7 +159,6 @@ handle(App, StatusCode) ->
         Other -> Other
     end.
              
-
 get_all(App) ->    
     RouteModule = list_to_atom(atom_to_list(App) ++ "_routes"),
     RouteModule:get_all().
