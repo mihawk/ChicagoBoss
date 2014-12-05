@@ -12,7 +12,7 @@
 %% -export([
 %%           domains/0
 %%          ,route/1
-%%          ,unroute/1
+%%          ,unroute/3
 %%          ,handle/1
 %%         ]).
 %%
