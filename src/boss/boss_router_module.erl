@@ -2,9 +2,27 @@
 %% Created: 05/12/2014
 
 %% Description: Minimalist module based Router system for Chicago Boss 
-%% this module show you how todo module based routing chicagoboss
-%% before lunching your app in dev mod or prod you need to compile this module
-%% ./rebar boss c=compile
+%% ===================================================================
+%%  to play with it:
+%%  in each app lib folder write a <app_name>_routes.erl module,
+%%  it is a first draft, it is based on the current one
+%%
+%% -module(<app_name>_routes).
+%%
+%% -export([
+%%           domains/0
+%%          ,route/1
+%%          ,unroute/1
+%%          ,handle/1
+%%         ]).
+%%
+%% domains() -> all. %% ["mydomain.com","toto.com"]
+%%
+%% route("/") ->  {"<app>_<name>_controller", "index", []};
+%% route(_) ->  undefined.            
+%%
+%% handle(_) -> undefined.
+%%
 
 -module(boss_router_module).
 -behaviour(boss_router_adapter).
@@ -23,6 +41,7 @@
          ,handle/2 
          ,get_all/1
          ,set_controllers/2
+         ,router_pid/1
         ]).
 
 %%
@@ -45,6 +64,9 @@ stop() ->
 reload(App) ->	
     %% TODO: recompile ?? boss_router_compiler ??
     ok.
+
+router_pid(App) ->
+    App.
 
 route(App, Url) ->
     RouteModule = list_to_atom(atom_to_list(App) ++ "_routes"),

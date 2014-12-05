@@ -48,7 +48,12 @@ translator_pid(AppName) ->
     gen_server:call(boss_web, {translator_pid, AppName}).
 
 router_pid(AppName) ->
-    gen_server:call(boss_web, {router_pid, AppName}).
+    router_pid(AppName, boss_env:router_adapter()).
+
+router_pid(AppName, boss_router) ->
+    gen_server:call(boss_web, {router_pid, AppName});
+router_pid(AppName, Router) ->
+    Router:router_pid(AppName).
 
 application_info(App) ->
     gen_server:call(boss_web, {application_info, App}).
