@@ -16,11 +16,11 @@ init({_Any, http}, Req, _Opts) ->
 -record(state, {websocket_id, session_id, service_url}).
 
 loop(Req, RouterAdapter) ->
-     boss_web_controller_handle_request:handle_request(Req, 
-						      mochiweb_request_bridge, 
-						      mochiweb_response_bridge,
-                              RouterAdapter
-                              ).
+     boss_web_controller_handle_request:handle_request(Req,  
+                                                       mochiweb_request_bridge, 
+                                                       mochiweb_response_bridge,
+                                                       RouterAdapter
+                                                      ).
 
 terminate(_Req, _State) ->
     ok.

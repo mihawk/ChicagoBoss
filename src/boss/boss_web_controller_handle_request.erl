@@ -13,9 +13,11 @@
 %% TODO REFACTOR AND TEST
 handle_request(Req, RequestMod, ResponseMod, RouterAdapter) ->
   
-    LoadedApplications	= boss_web:get_all_applications(),
-    Request		= simple_bridge:make_request(RequestMod, Req),
-    FullUrl		= Request:path(),
+    %%LoadedApplications	= boss_web:get_all_applications(), %%% not efficient here
+    LoadedApplications	= boss_env:applications(), 
+
+    Request		= simple_bridge:make_request(RequestMod, Req), %% here is it ???
+    FullUrl		= Request:path(), 
 
     ApplicationForPath	= RouterAdapter:find_application_for_path(Request,
                                                                   FullUrl, 
@@ -41,20 +43,25 @@ handle_application(Req, ResponseMod, _Request, _FullUrl, undefined, _RouterAdapt
     Response1	 = (Response:status_code(404)):data(["No application configured at this URL"]),
     Response1:build_response();
 handle_application(Req, ResponseMod, Request, FullUrl,  App, RouterAdapter) ->
-    BaseURL		 = boss_web:base_url(App),
+
+    BaseURL	 = boss_web:base_url(App),
+    %%BaseURL	 = RouterAdapter:base_url(App),
+     
     DocRoot      = boss_files_util:static_path(App),
     StaticPrefix = boss_web:static_prefix(App),
-    Url			 = lists:nthtail(length(BaseURL), FullUrl),
+    %%StaticPrefix = RouterAdapter:static_prefix(App),
+
+    Url		 = lists:nthtail(length(BaseURL), FullUrl),
     Response	 = simple_bridge:make_response(ResponseMod, {Req, DocRoot}),
     SpecialFiles = boss_env:get_env(App,
-            					   static_files,
-            					   [
-                                    "/favicon.ico", 
-                                    "/apple-touch-icon.png", 
-                                    "/robots.txt"
-                                   ]),
+                                    static_files,
+                                    [
+                                     "/favicon.ico", 
+                                     "/apple-touch-icon.png", 
+                                     "/robots.txt"
+                                    ]),
     IsSpecialFile= lists:member(Url,SpecialFiles),
-   
+    
     handle_result(Request, App, StaticPrefix, Url, Response, IsSpecialFile, RouterAdapter).
 
 
@@ -64,8 +71,10 @@ handle_result(Request, App, StaticPrefix, Url, Response, _IsSpecialFile = false,
     TestStaticPrefix = string:substr(Url, 1, length(StaticPrefix)),
     case TestStaticPrefix of
 	StaticPrefix ->
+            %%lager:info("handle_result static [~p,~p,~p]",[App, Url, RouterAdapter]),
 	    build_static_response(App, StaticPrefix, Url, Response);
 	_ ->
+            %%lager:info("handle_result dynamic [~p,~p,~p]",[App, Url, RouterAdapter]),
 	    build_dynamic_response(App, Request, Response, Url, RouterAdapter)
     end.
 
@@ -121,18 +130,18 @@ make_etag(App, StaticPrefix, File) ->
 %% TODO: Refactor
 build_dynamic_response(App, Request, Response, Url, RouterAdapter) ->
     Mode            = boss_web_controller_util:execution_mode(App),
-    AppInfo		    = boss_web:application_info(App),
+    AppInfo	    = boss_web:application_info(App),
 
-    TranslatorPid	= boss_web:translator_pid(App),
-    RouterPid		= boss_web:router_pid(App),
-    ControllerList	= boss_files:web_controller_list(App),
+    TranslatorPid   = boss_web:translator_pid(App),
+    RouterPid	    = boss_web:router_pid(App),
+    ControllerList  = boss_files:web_controller_list(App),
     TR              = set_timer(Request, 
                                 Url, 
                                 Mode,
-				                AppInfo, 
+                                AppInfo, 
                                 TranslatorPid,
-				                RouterPid,
-				                ControllerList,
+                                RouterPid,
+                                ControllerList,
                                 RouterAdapter
                                 ),
     {Time, {StatusCode, Headers, Payload}} = TR,
@@ -156,7 +165,7 @@ set_timer(Request, Url, Mode, AppInfo, TranslatorPid, RouterPid,
 		   router_pid                = RouterPid,
 		   controller_modules        = ControllerList
 		  },
-    %R = timer:tc(process_request,[NewAppInfo, Request, Mode, Url]),
+    %%R = timer:tc(process_request,[NewAppInfo, Request, Mode, Url]),
     R  = erlang:apply(?MODULE,process_request,[NewAppInfo, Request, Mode, Url, RouterAdapter]),
     {1,R}.
 
@@ -245,9 +254,10 @@ process_request(AppInfo, Req, Mode, Url, RouterAdapter) ->
     process_result_and_add_session(AppInfo, [{request, Req}, {session_id, SessionID1}], Result).
 
 process_dynamic_request(#boss_app_info{ router_pid = RouterPid } = AppInfo, Req, Mode, Url, RouterAdapter) ->
-    
+    %%lager:info("process_dynamic_request[~p,~p,~p,~p]@@@",[RouterPid, Mode, Url, RouterAdapter]),    
     {Result, SessionID1} = case RouterAdapter:route(RouterPid, Url) of
             			       {ok, {Application, Controller, Action, Tokens}} when Application =:= AppInfo#boss_app_info.application ->
+                                           
             				   Location = {Controller, Action, Tokens},
             				  
             				   RequestContext = [{request, Req}], 

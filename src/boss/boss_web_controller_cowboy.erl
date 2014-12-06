@@ -11,8 +11,8 @@ dispatch_cowboy(Applications) ->
     %Dispatch		= [{'_',
 
     Dispatch		= [{'_', AppStaticDispatches ++ BossDispatch}],
-    SSLEnabled = boss_env:get_env(ssl_enable, false),
-    CowboyListener        = get_listener(SSLEnabled),
+    SSLEnabled          = boss_env:get_env(ssl_enable, false),
+    CowboyListener      = get_listener(SSLEnabled),
     cowboy:set_env(CowboyListener, dispatch, cowboy_router:compile(Dispatch)).
 
 -spec(get_listener(boolean()) -> boss_https_listener|boss_http_listener).
@@ -40,7 +40,10 @@ create_dispatch(AppName) ->
 create_cowboy_static_opts(AppName, Extra) ->
     case code:priv_dir(AppName) of
         {error, bad_name} ->
-            lager:warning("Unable to determine code:priv_dir for app ~p. The most common cause of this is your ChicagoBoss app having a different name than the directory it's in. Using ./priv/", [AppName]),
+            lager:warning("Unable to determine code:priv_dir for app ~p."
+                          " The most common cause of this is your ChicagoBoss app"
+                          " having a different name than the directory it's in."
+                          " Using ./priv/", [AppName]),
             {dir, "./priv/static", Extra};
         Priv ->
             case filelib:is_dir(Priv) of

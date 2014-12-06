@@ -150,29 +150,29 @@ handle(StatusCode, State) ->
 
 route(Url, State) ->
     _Route = case get_match(Url, ets:tab2list(State#state.routes_table_id)) of
-        undefined -> 
-            case string:tokens(Url, "/") of
-                [Controller] -> 
-                    case is_controller(State, Controller) of
-                        true -> {ok, {State#state.application, Controller, default_action(State, Controller), []}};
-                        false -> not_found
-                    end;
-                [Controller, Action|Tokens] ->
-                    case is_controller(State, Controller) of
-                        true -> 
-                            UnquotedTokens = lists:map(fun mochiweb_util:unquote/1, Tokens),
-                            {ok, {State#state.application, Controller, Action, UnquotedTokens}};
-                        false -> not_found
-                    end;
-                _ ->
-                    not_found
-            end;
-        _Rte = #boss_route{ application = App, controller = C, action = A, params = P } -> 
-            lager:info("Boss Route ~p ~p ~p ~p", [App, C, A, P]),
-            ControllerModule = list_to_atom(boss_files:web_controller(App, C, State#state.controllers)),
-            {Tokens, []}     = boss_controller_lib:convert_params_to_tokens(P, ControllerModule, list_to_atom(A)),
-            {ok, {App, C, A, Tokens}}
-    end.
+                 undefined -> 
+                     case string:tokens(Url, "/") of
+                         [Controller] -> 
+                             case is_controller(State, Controller) of
+                                 true -> {ok, {State#state.application, Controller, default_action(State, Controller), []}};
+                                 false -> not_found
+                             end;
+                         [Controller, Action|Tokens] ->
+                             case is_controller(State, Controller) of
+                                 true -> 
+                                     UnquotedTokens = lists:map(fun mochiweb_util:unquote/1, Tokens),
+                                     {ok, {State#state.application, Controller, Action, UnquotedTokens}};
+                                 false -> not_found
+                             end;
+                         _ ->
+                             not_found
+                     end;
+                 _Rte = #boss_route{ application = App, controller = C, action = A, params = P } -> 
+                     lager:info("Boss Route ~p ~p ~p ~p", [App, C, A, P]),
+                     ControllerModule = list_to_atom(boss_files:web_controller(App, C, State#state.controllers)),
+                     {Tokens, []}     = boss_controller_lib:convert_params_to_tokens(P, ControllerModule, list_to_atom(A)),
+                     {ok, {App, C, A, Tokens}}
+             end.
 
 unroute(Controller, Action, Params, State) ->
     _RoutedURL = case ets:lookup(State#state.reverse_routes_table_id,

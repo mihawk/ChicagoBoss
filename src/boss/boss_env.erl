@@ -3,6 +3,16 @@
 -export([boss_env/0, setup_boss_env/0, get_env/2, get_env/3]).
 -export([master_node/0, is_master_node/0, is_developing_app/1]).
 -export([router_adapter/0, cache_adapter/0, session_adapter/0, mq_adapter/0]).
+-export([applications/0]).
+
+
+-spec applications() -> any().
+applications() ->
+    case application:get_env(boss, applications) of
+        {ok, Val} -> Val;
+        Err -> Err
+    end.
+
 
 -spec boss_env() -> any().
 boss_env() ->

@@ -52,6 +52,7 @@ router_pid(AppName) ->
 
 router_pid(AppName, boss_router) ->
     gen_server:call(boss_web, {router_pid, AppName});
+
 router_pid(AppName, Router) ->
     Router:router_pid(AppName).
 

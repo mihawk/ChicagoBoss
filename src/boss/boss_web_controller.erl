@@ -68,20 +68,20 @@ init_web_server_options() ->
 
 
 init(Config) ->
-    ThisNode					         = erlang:node(),
-    Env						             = boss_web_controller_init:init_services(),
-    {ok,MasterNode}				         = boss_web_controller_init:init_master_node(Env, ThisNode),
+    ThisNode				 = erlang:node(),
+    Env					 = boss_web_controller_init:init_services(),
+    {ok,MasterNode}			 = boss_web_controller_init:init_master_node(Env, ThisNode),
     
     boss_web_controller_init:init_mail_service(),
     RouterAdapter                        = boss_env:router_adapter(), 
 
     {RequestMod, ResponseMod, ServerMod} = init_web_server_options(),
-    {SSLEnable, SSLOptions}			     = boss_web_controller_init:init_ssl(),
-    ServicesSupPid				         = boss_web_controller_init:init_master_services(ThisNode, MasterNode),
+    {SSLEnable, SSLOptions}		 = boss_web_controller_init:init_ssl(),
+    ServicesSupPid			 = boss_web_controller_init:init_master_services(ThisNode, MasterNode),
     ServerConfig                         = init_server_config(Config, RequestMod, ResponseMod, RouterAdapter),
-    Pid						             = boss_web_controller_init:init_webserver(
-                                                ThisNode, MasterNode, ServerMod, SSLEnable,
-											    SSLOptions, ServicesSupPid, ServerConfig),
+    Pid					 = boss_web_controller_init:init_webserver(
+                                             ThisNode, MasterNode, ServerMod, SSLEnable,
+                                             SSLOptions, ServicesSupPid, ServerConfig),
     {ok, #state{ 
                 router_adapter  = RouterAdapter,
                 service_sup_pid = ServicesSupPid, 
@@ -94,7 +94,7 @@ init_server_config(Config, RequestMod, ResponseMod, RouterAdapter) ->
             end} | Config].
 
 handle_info(timeout, #state{service_sup_pid = ServicesSupPid} = State) ->
-    Applications	= boss_env:get_env(applications, []),
+    Applications    = boss_env:get_env(applications, []),
     AppInfoList     = boss_web_controller_util:start_boss_applications(Applications, 
                                                                        ServicesSupPid, 
                                                                        State),
@@ -157,7 +157,7 @@ handle_call({translator_pid, App}, _From, State) ->
                 Res
         end, undefined, State#state.applications),
     {reply, Pid, State};
-handle_call({router_pid, App}, _From, State) ->
+handle_call({router_pid, App}, _From, State) ->    
     Pid = lists:foldl(fun
             (#boss_app_info{ application = App1, router_sup_pid = SupPid }, _) when App1 =:= App ->
                 [{_, RouterPid, _, _}] = supervisor:which_children(SupPid),
