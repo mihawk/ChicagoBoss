@@ -1,4 +1,5 @@
 -module(boss_load).
+
 -export([
         incoming_mail_controller_module/1,
         load_all_modules/2,
@@ -14,7 +15,21 @@
         module_is_loaded/1,
         reload_all/0
     ]).
+
+-export([compile_controller/2,
+         maybe_compile/4,
+         compile_model/2,
+         compile/2,
+         compile_view_dir_erlydtl/5,
+         compile_view/5,
+         view_custom_tags_dir_module/1
+        ]).
+
+-export([start/0, start/1]).
+-export([stop/0]).
+
 -include("boss_web.hrl").
+
 
 -ifdef(TEST).
 -compile(export_all).
@@ -33,7 +48,7 @@
 -spec incoming_mail_controller_module(application()) -> atom().
 -spec load_all_modules(application(), atom() | pid() | {atom(),atom()}) ->
    {'ok',module_types()}.
--spec load_all_modules(application(),atom() | pid() | {atom(),atom()},_) ->
+-spec load_all_modules(application(), atom() | pid() | {atom(),atom()}, string() | 'undefined') ->
    {'ok',module_types()}.
 -spec load_all_modules_and_emit_app_file(application(),atom() | binary() | [atom() | [any()] | char()]) -> 
    'ok' | {'error',atom()}.
@@ -49,6 +64,15 @@
 		       {'module', atom() | tuple()}].
 
 -define(CUSTOM_TAGS_DIR_MODULE, '_view_lib_tags').
+
+start() ->
+    start([]).
+start(Options) ->
+    application:start(fs),
+    boss_load_sup:start_link([Options]).
+
+stop() ->
+    ok.
 
 load_all_modules(Application, TranslatorSupPid) ->
     load_all_modules(Application, TranslatorSupPid, undefined).
@@ -67,27 +91,27 @@ load_all_modules(Application, TranslatorSupPid, OutDir) ->
 -type op()       :: {op_key(), fun((atom(), string()) -> error(_))}.
 -spec(make_ops_list(pid()) -> [op()]).
 make_ops_list(TranslatorPid) ->
-    [{test_modules,	       fun load_test_modules/2 		},
-     {lib_modules,	       fun load_libraries/2			},
-     {websocket_modules,       fun load_services_websockets/2		},
-     {mail_modules,	       fun load_mail_controllers/2		},
-     {controller_modules,      fun load_web_controllers/2		},
-     {model_modules,	       fun load_models/2			},
-     {view_lib_helper_modules, fun load_view_lib_modules/2		},
-     {view_lib_tags_modules,      load_view_lib(_, _, TranslatorPid)	},
-     {view_modules,               load_views(_, _,    TranslatorPid)	}].
+    [{test_modules,	           fun load_test_modules/2       },
+     {lib_modules,	           fun load_libraries/2          },
+     {websocket_modules,       fun load_services_websockets/2},
+     {mail_modules,	           fun load_mail_controllers/2   },
+     {controller_modules,      fun load_web_controllers/2    },
+     {model_modules,	       fun load_models/2             },
+     {view_lib_helper_modules, fun load_view_lib_modules/2   },
+     {view_lib_tags_modules,       load_view_lib(_, _, TranslatorPid)},
+     {view_modules,                load_views(_, _,    TranslatorPid)}].
     
 -spec make_all_modules(atom(), string(), [op()]) -> [{atom(),_}].
 
 make_all_modules(Application, OutDir, Ops) ->
     lists:map(fun({Key, Lambda}) ->
-		      case Lambda(Application, OutDir) of
-			  {ok, Modules} ->
-			      {Key, Modules};
-			  {error, Message} ->
-			      lager:error("Load Module Error ~p : ~p", [Key, Message]),
-			      {Key, []}
-		      end
+    		      case Lambda(Application, OutDir) of
+    			  {ok, Modules} ->
+    			      {Key, Modules};
+    			  {error, Message} ->
+    			      lager:error("Load Module Error ~p : ~p", [Key, Message]),
+    			      {Key, []}
+    		      end
               end, Ops).
 
 load_test_modules(Application, OutDir) ->
@@ -300,10 +324,10 @@ view_doc_root(ViewPath) ->
         [boss_files_util:web_view_path(), boss_files_util:mail_view_path()]).
 
 compile_view_dir_erlydtl(Application, LibPath, Module, OutDir, TranslatorPid) ->
-    TagHelpers                = lists:map(fun erlang:list_to_atom/1, boss_files_util:view_tag_helper_list(Application)),
-    FilterHelpers        = lists:map(fun erlang:list_to_atom/1, boss_files_util:view_filter_helper_list(Application)),
-    ExtraTagHelpers	= boss_env:get_env(template_tag_modules, []),
-    ExtraFilterHelpers	= boss_env:get_env(template_filter_modules, []),
+    TagHelpers         = lists:map(fun erlang:list_to_atom/1, boss_files_util:view_tag_helper_list(Application)),
+    FilterHelpers      = lists:map(fun erlang:list_to_atom/1, boss_files_util:view_filter_helper_list(Application)),
+    ExtraTagHelpers    = boss_env:get_env(template_tag_modules, []),
+    ExtraFilterHelpers = boss_env:get_env(template_filter_modules, []),
 
     lager:info("Compile Modules ~p  ~p", [LibPath, Module]),
     Res = erlydtl:compile_dir(LibPath, Module,
@@ -318,8 +342,10 @@ compile_view_dir_erlydtl(Application, LibPath, Module, OutDir, TranslatorPid) ->
                                       end
                               end}]),
     case Res of
-        ok ->
-            {ok, Module};
+        {ok, M} ->
+            {ok, M};
+        {ok, M, _} ->
+            {ok, M};           
         Err -> Err
     end.
 
@@ -402,13 +428,20 @@ load_views_inner(Application, OutDir, TranslatorPid) ->
 	    TemplateAdapter = boss_files:template_adapter_for_extension(
 				filename:extension(File)),
 	    ViewR = compile_view(Application, File, TemplateAdapter, OutDir, TranslatorPid),
+        lager:info("load_views_inner ~p",[ViewR]),
 	    case ViewR of
-		{ok, Module} ->
-		    [Module|Acc];
-		{error, Reason} ->
-		    lager:error("Unable to compile ~p because of ~p",
-				[File, Reason]),
-		    Acc
+    		{ok, R} ->
+                case R of
+                    Module when is_atom(Module)-> [Module|Acc];
+                    Err -> 
+                        lager:error("Unable to compile ~p because of ~p",
+                            [File, Err]),
+                        Acc
+                end;
+    		{error, Reason} ->
+    		    lager:error("Unable to compile ~p because of ~p",
+    				[File, Reason]),
+    		    Acc
 	    end
     end.
 
