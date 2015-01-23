@@ -41,18 +41,18 @@ handle_application(Req, ResponseMod, _Request, _FullUrl, undefined, _RouterAdapt
     Response1	 = (Response:status_code(404)):data(["No application configured at this URL"]),
     Response1:build_response();
 handle_application(Req, ResponseMod, Request, FullUrl,  App, RouterAdapter) ->
-    BaseURL		 = boss_web:base_url(App),
+    BaseURL	 = boss_web:base_url(App),
     DocRoot      = boss_files_util:static_path(App),
     StaticPrefix = boss_web:static_prefix(App),
-    Url			 = lists:nthtail(length(BaseURL), FullUrl),
+    Url		 = lists:nthtail(length(BaseURL), FullUrl),
     Response	 = simple_bridge:make_response(ResponseMod, {Req, DocRoot}),
     SpecialFiles = boss_env:get_env(App,
-            					   static_files,
-            					   [
-                                    "/favicon.ico", 
-                                    "/apple-touch-icon.png", 
-                                    "/robots.txt"
-                                   ]),
+                                    static_files,
+                                    [
+                                     "/favicon.ico", 
+                                     "/apple-touch-icon.png", 
+                                     "/robots.txt"
+                                    ]),
     IsSpecialFile= lists:member(Url,SpecialFiles),
    
     handle_result(Request, App, StaticPrefix, Url, Response, IsSpecialFile, RouterAdapter).
@@ -120,25 +120,26 @@ make_etag(App, StaticPrefix, File) ->
 
 %% TODO: Refactor
 build_dynamic_response(App, Request, Response, Url, RouterAdapter) ->
-    Mode            = boss_web_controller_util:execution_mode(App),
-    AppInfo		    = boss_web:application_info(App),
+    Mode           = boss_env:boss_env(), 
+    AppInfo        = boss_web:application_info(App),
 
-    TranslatorPid	= boss_web:translator_pid(App),
-    RouterPid		= boss_web:router_pid(App),
-    ControllerList	= boss_files:web_controller_list(App),
-    TR              = set_timer(Request, 
-                                Url, 
-                                Mode,
-				                AppInfo, 
-                                TranslatorPid,
-				                RouterPid,
-				                ControllerList,
-                                RouterAdapter
-                                ),
+    TranslatorPid  = boss_web:translator_pid(App),
+    RouterPid	   = boss_web:router_pid(App),
+    ControllerList = boss_files:web_controller_list(App),
+    TR             = set_timer(Request, 
+                               Url, 
+                               Mode,
+                               AppInfo, 
+                               TranslatorPid,
+                               RouterPid,
+                               ControllerList,
+                               RouterAdapter
+                              ),
     {Time, {StatusCode, Headers, Payload}} = TR,
     ErrorFormat		= "~s ~s [~p] ~p ~pms",
     RequestMethod	= Request:request_method(),
-    FullUrl		    = Request:path(),
+    FullUrl		= Request:path(),
+    lager:info("Mode ~p, FullUrl ~p", [Mode, FullUrl]),
     ErrorArgs		= [RequestMethod, FullUrl, App, StatusCode, Time div 1000],
     log_status_code(StatusCode, ErrorFormat, ErrorArgs),
     Response1		= (Response:status_code(StatusCode)):data(Payload),
@@ -245,7 +246,6 @@ process_request(AppInfo, Req, Mode, Url, RouterAdapter) ->
     process_result_and_add_session(AppInfo, [{request, Req}, {session_id, SessionID1}], Result).
 
 process_dynamic_request(#boss_app_info{ router_pid = RouterPid } = AppInfo, Req, Mode, Url, RouterAdapter) ->
-    
     {Result, SessionID1} = case RouterAdapter:route(RouterPid, Url) of
             			       {ok, {Application, Controller, Action, Tokens}} when Application =:= AppInfo#boss_app_info.application ->
             				   Location = {Controller, Action, Tokens},
@@ -430,40 +430,67 @@ execute(_Mode, {Controller, _, _} = Location, AppInfo, RequestContext) ->
             {boss_web_controller_render:render_view(Location, AppInfo, RequestContext)}
     end.
 
-handle_doc(development, {"doc", ModelName, _}, AppInfo, RequestContext) ->
-    ModelModules = AppInfo#boss_app_info.model_modules,
-    Result = case lists:member(ModelName, ModelModules) of
-        true ->
-            Model = list_to_atom(ModelName),
-            {Model, Edoc} = boss_model_manager:edoc_module(
-                boss_files_util:model_path(ModelName ++ ".erl"), [{private, true}]),
-            {ok, correct_edoc_html(Edoc, AppInfo), []};
-        false ->
-            % ok, it's not model, so it could be web controller
-            Controllers = AppInfo#boss_app_info.controller_modules,
-            case lists:member(ModelName, Controllers) of
-                    true ->
-                        Controller = list_to_atom(ModelName),                          
-                        {Controller, Edoc} = edoc:get_doc(boss_files_util:web_controller_path(ModelName ++ ".erl"), [{private, true}]),
-                        {ok, correct_edoc_html(Edoc, AppInfo), []};
-                    false ->
-                        % nope, so just render index page
-                        case boss_html_doc_template:render([
-                                    {application, AppInfo#boss_app_info.application},
-                                    {'_doc', AppInfo#boss_app_info.doc_prefix},
-                                    {'_static', AppInfo#boss_app_info.static_prefix},
-                                    {'_base_url', AppInfo#boss_app_info.base_url},
-                                    {models, ModelModules},
-                                    {controllers, Controllers}]) of
-                            {ok, Payload} ->
-                                {ok, Payload, []};
-                            Err ->
-                                Err
-                        end
-            end
-    end,
-    {Result, proplists:get_value(session_id, RequestContext)}.
+execute_action(Location, AppInfo, RequestContext) ->
+    boss_web_controller:execute_action(Location, AppInfo, RequestContext, []).
 
+handle_doc(development, {"doc", DocName, _}, AppInfo, ReqCtx) ->
+    ModelModules = AppInfo#boss_app_info.model_modules,
+    Result = handle_doc_model(lists:member(DocName, ModelModules), DocName, AppInfo),
+    {Result, proplists:get_value(session_id, ReqCtx)}.
+
+handle_doc_model(true, DocName, AppInfo) ->
+    App = AppInfo#boss_app_info.application,
+    Model = list_to_atom(DocName),
+    Dir = model_dir(App),
+    ModelFiles = boss_files:find_file(Dir),
+    File =  find_file(DocName ++ ".erl", ModelFiles),
+    {Model, Edoc} = boss_model_manager:edoc_module(
+                      File, [{private, true}]),
+    {ok,  correct_edoc_html(Edoc, AppInfo), []};
+
+handle_doc_model(false, DocName, AppInfo) ->
+    Controllers = AppInfo#boss_app_info.controller_modules,
+    handle_doc_controller(lists:member(DocName, Controllers), DocName, AppInfo).
+
+handle_doc_controller(true, DocName, AppInfo) ->
+    Controller = list_to_atom(DocName),
+    Dir = controller_dir(AppInfo#boss_app_info.application),
+    CtrlFiles = boss_files:find_file(Dir),
+    CtrlFile =  find_file(DocName ++ ".erl", CtrlFiles),
+    {Controller, Edoc} = edoc:get_doc(CtrlFile, [{private, true}]),
+    {ok, correct_edoc_html(Edoc, AppInfo), []};
+
+%%FIX ME doc for filter ??
+%%FIX ME doc for custom tags ??
+%%FIX ME doc for lib ??
+
+handle_doc_controller(false, DocName, AppInfo) ->
+    %% nope, so just render index page
+    Apps = boss_env:get_env(applications, [AppInfo#boss_app_info.application]),
+    Docs = [begin 
+                BaseURL   = boss_env:get_env(X, base_url, "/"),
+                DocPrefix = boss_env:get_env(X, doc_prefix, "/doc"),
+                DocUrl    = case BaseURL of
+                                "/" -> DocPrefix;
+                                _ -> BaseURL ++ DocPrefix
+                            end,
+                [{doc_url, DocUrl},{doc_app, X}]
+            end || X <-Apps],
+    Params = [
+              {docs, Docs},
+              {application, AppInfo#boss_app_info.application},
+              {'_doc', AppInfo#boss_app_info.doc_prefix},
+              {'_static', AppInfo#boss_app_info.static_prefix},
+              {'_base_url', AppInfo#boss_app_info.base_url},
+              {models, AppInfo#boss_app_info.model_modules},
+              {controllers, AppInfo#boss_app_info.controller_modules}
+             ],
+    case boss_html_doc_template:render(Params) of
+        {ok, Payload} ->
+            {ok, Payload, []};
+        Err ->
+            Err
+    end.
 
 %% @desc function to correct path errors in HTML output produced by Edoc
 correct_edoc_html(Edoc, AppInfo) ->
@@ -472,5 +499,21 @@ correct_edoc_html(Edoc, AppInfo) ->
     Result3 = re:replace(Result2, "erlang.png", AppInfo#boss_app_info.base_url++AppInfo#boss_app_info.static_prefix++"/edoc/erlang.png", [{return,list}, global]),
     Result3.
 
-execute_action(Location, AppInfo, RequestContext) ->
-    boss_web_controller:execute_action(Location, AppInfo, RequestContext, []).
+
+root_dir(App) when is_atom(App)->
+    PrivDir = filename:split(code:priv_dir(App)),
+    ["priv" | P ] = lists:reverse(PrivDir, []),
+    lists:reverse(P, []).
+
+model_dir(App) when is_atom(App)->
+    filename:join(root_dir(App) ++ ["src","model"]).
+controller_dir(App) when is_atom(App)->
+    filename:join(root_dir(App) ++ ["src","controller"]).
+
+find_file(_File, []) ->  not_found;
+find_file(File, [Path|T]) -> 
+    Last = lists:last(filename:split(Path)),
+    case File of
+        Last -> Path;
+        _ -> find_file(File, T)
+    end.
